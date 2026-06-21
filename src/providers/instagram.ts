@@ -351,7 +351,9 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
   const postId = manualId || c.req.param("id") || c.req.path.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/)?.[1];
   if (!postId) return c.redirect("https://www.instagram.com/", 302);
 
-  const originalUrl = `https://www.instagram.com/p/${postId}/`;
+  const typeMatch = c.req.path.match(/\/(p|reel|reels|tv)\//) ?? c.req.query("url")?.match(/\/(p|reel|reels|tv)\//);
+  const type = typeMatch ? typeMatch[1] : "p";
+  const originalUrl = `https://www.instagram.com/${type}/${postId}/`;
   const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
   const isDirect = dParam !== undefined;
 
@@ -376,7 +378,16 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
   const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(`@${data.username}`)}&url=${encodeURIComponent(originalUrl)}&type=${isVideo ? "video" : "link"}`;
 
   if (isVideo) {
-    return c.redirect(`https://instafix.thororen.com/p/${postId}${idx > 0 ? `/${idx + 1}` : ""}`, 302);
+    const targetUrl = `https://instafix.thororen.com/${type}/${postId}${idx > 0 ? `/${idx + 1}` : ""}`;
+    try {
+      const res = await fetch(targetUrl, { headers: { "User-Agent": ua ?? "" } });
+      if (res.ok) {
+        let html = await res.text();
+        html = html.replace(/(content|href)="\//g, '$1="https://instafix.thororen.com/');
+        return c.html(html);
+      }
+    } catch { }
+    return c.redirect(targetUrl, 302);
   }
 
   if (isGrid) {
