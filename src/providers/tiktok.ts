@@ -215,23 +215,49 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
   }
 
   const range = c.req.header("range");
-  const videoRes = await fetchVideoWithRetry(playAddrUrl);
+  const upstreamHeaders: Record<string, string> = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+    Referer: "https://www.tiktok.com/",
+    Origin: "https://www.tiktok.com",
+    Accept: "*/*",
+    "Accept-Encoding": "gzip, deflate, br",
+    "sec-fetch-site": "cross-site",
+    "sec-fetch-mode": "cors",
+  };
+  if (range) upstreamHeaders.Range = range;
 
-  if (!videoRes) {
-    console.log(`TikTok video proxy failed for ${awemeId}`);
+  try {
+    let videoRes = await fetch(playAddrUrl, {
+      headers: upstreamHeaders,
+      redirect: "manual"
+    });
+
+    if (videoRes.status === 301 || videoRes.status === 302) {
+      const location = videoRes.headers.get("location");
+      if (location) {
+        videoRes = await fetch(location, { headers: upstreamHeaders, redirect: "manual" });
+      }
+    }
+
+    if (!videoRes.ok && videoRes.status !== 206) {
+      console.log(`TikTok video proxy still failed for ${awemeId} — status ${videoRes.status}`);
+      return c.redirect(playAddrUrl, 302);
+    }
+
+    const proxyHeaders = new Headers();
+    ["Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"].forEach(h => {
+      if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
+    });
+    if (!proxyHeaders.has("Accept-Ranges")) proxyHeaders.set("Accept-Ranges", "bytes");
+
+    return new Response(videoRes.body, {
+      status: videoRes.status,
+      headers: proxyHeaders
+    });
+  } catch (e) {
+    console.error("TikTok video proxy exception:", e);
     return c.redirect(playAddrUrl, 302);
   }
-
-  const proxyHeaders = new Headers();
-  ["Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"].forEach(h => {
-    if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
-  });
-  if (!proxyHeaders.has("Accept-Ranges")) proxyHeaders.set("Accept-Ranges", "bytes");
-
-  return new Response(videoRes.body, {
-    status: videoRes.status,
-    headers: proxyHeaders
-  });
 });
 
 tiktokRouter.get("/:videoId", async c => {

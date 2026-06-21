@@ -217,20 +217,31 @@ instagramRouter.get("/videos/:id/:n/video.mp4", async c => {
   const mediaUrl = data.medias[Math.max(0, n)]?.url;
   if (!mediaUrl) return c.redirect(`https://www.instagram.com/p/${id}/`, 302);
 
-  const videoRes = await fetchVideoWithRetry(mediaUrl);
+  try {
+    const videoRes = await fetch(mediaUrl, {
+      headers: {
+        Referer: "https://www.instagram.com/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+        Accept: "*/*",
+        "sec-fetch-site": "cross-site",
+      },
+      redirect: "manual"
+    });
 
-  if (!videoRes) {
-    console.log(`Instagram video proxy failed for ${id}`);
+    if (!videoRes.ok && videoRes.status !== 206) {
+      return c.redirect(mediaUrl, 302);
+    }
+
+    const proxyHeaders = new Headers();
+    ["Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"].forEach(h => {
+      if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
+    });
+    if (!proxyHeaders.has("Accept-Ranges")) proxyHeaders.set("Accept-Ranges", "bytes");
+
+    return new Response(videoRes.body, { status: videoRes.status, headers: proxyHeaders });
+  } catch {
     return c.redirect(mediaUrl, 302);
   }
-
-  const proxyHeaders = new Headers();
-  ["Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"].forEach(h => {
-    if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
-  });
-  if (!proxyHeaders.has("Accept-Ranges")) proxyHeaders.set("Accept-Ranges", "bytes");
-
-  return new Response(videoRes.body, { status: videoRes.status, headers: proxyHeaders });
 });
 
 instagramRouter.get("/grid/:id", async c => {
