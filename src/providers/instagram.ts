@@ -123,7 +123,7 @@ export const instagramRouter = new Hono();
 
 instagramRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "link", author_name: q.user, author_url: q.url, provider_name: "LinkEmbedder / Instagram" }));
+  return c.json(buildOEmbed({ type: (q.type as any) || "link", author_name: q.user, author_url: q.url, provider_name: "LinkEmbedder / Instagram" }));
 });
 
 instagramRouter.get("/images/:id/:n", async c => {
@@ -223,11 +223,11 @@ async function handleEmbed(c: Context): Promise<Response> {
 
   const authorName = `@${data.username}`;
   const description = data.caption.slice(0, 300) + (data.caption.length > 300 ? "…" : "");
-  const host = getOrigin(c);
-  const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}`;
+  const host = new URL(c.req.url).origin;
   const idx = Math.max(0, (mediaNumParam || 1) - 1);
   const media = data.medias[Math.min(idx, data.medias.length - 1)];
   const isVideo = media.typeName.toLowerCase().includes("video");
+  const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}&type=${isVideo ? "video" : "link"}`;
   const n = idx + 1;
 
   if (isVideo) {

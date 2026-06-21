@@ -96,9 +96,9 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const tweetUrl = `https://x.com/${username}/status/${tweetId}`;
   const authorName = `${displayName} (@${username})`;
   const host = getOrigin(c);
-  const oembedUrl = `${host}/twitter/oembed?desc=${encodeURIComponent(text)}&user=${encodeURIComponent(authorName)}&link=${encodeURIComponent(tweetUrl)}&ttype=link`;
-
   const video = getBestVideo(tweet);
+  const oembedUrl = `${host}/twitter/oembed?desc=${encodeURIComponent(text)}&user=${encodeURIComponent(authorName)}&link=${encodeURIComponent(tweetUrl)}&ttype=${video ? "video" : "link"}`;
+
   if (video) {
     return c.html(buildEmbedHtml({ description: text, url: tweetUrl, imageUrl: video.thumb, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, color: TWITTER_COLOR, siteName: "Twitter / X", twitterCard: "player", oembedUrl }));
   }

@@ -98,7 +98,8 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
   const description = item.desc ?? "";
   const postUrl = `https://www.tiktok.com/@${username}/video/${awemeId}`;
   const host = getOrigin(c);
-  const oembedUrl = `${host}/tiktok/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(postUrl)}`;
+  const isVideo = !item.imagePost?.images?.length;
+  const oembedUrl = `${host}/tiktok/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(postUrl)}&type=${isVideo ? "video" : "link"}`;
 
   if (item.imagePost?.images?.length) {
     const { images } = item.imagePost;
@@ -149,7 +150,7 @@ export const tiktokRouter = new Hono();
 
 tiktokRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "link", author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / TikTok" }));
+  return c.json(buildOEmbed({ type: (q.type as any) || "link", author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / TikTok" }));
 });
 
 tiktokRouter.get("/images/:videoId/:n", async c => {
@@ -196,13 +197,20 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
     const upstreamHeaders: Record<string, string> = {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
       Accept: "*/*",
-      Referer: "https://www.tiktok.com/"
     };
     if (range) upstreamHeaders.Range = range;
 
-    const videoRes = await fetch(playAddrUrl, { headers: upstreamHeaders });
+    const videoRes = await fetch(playAddrUrl, { headers: upstreamHeaders, redirect: "manual" });
 
-    if (!videoRes.ok && videoRes.status !== 206) return c.redirect(playAddrUrl, 302);
+    if (videoRes.status === 301 || videoRes.status === 302) {
+      const location = videoRes.headers.get("location");
+      return c.redirect(location || playAddrUrl, 302);
+    }
+
+    if (!videoRes.ok && videoRes.status !== 206) {
+      console.log(`upstream fetch failed: status=${videoRes.status} url=${playAddrUrl}`);
+      return c.redirect(playAddrUrl, 302);
+    }
 
     const proxyHeaders = new Headers();
     ["Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"].forEach(h => {

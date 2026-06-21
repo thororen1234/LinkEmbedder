@@ -78,12 +78,13 @@ async function handlePost(permalink: string, c: Context): Promise<Response> {
   const effective = post.crosspost_parent_list?.[0] ?? post;
   const authorLabel = `u/${post.author} on r/${post.subreddit}`;
   const host = getOrigin(c);
-  const oembedUrl = `${host}/reddit/oembed?title=${encodeURIComponent(post.title)}&url=${encodeURIComponent(originalUrl)}`;
   const desc = post.selftext?.trim() || post.title;
   const fullDesc = desc;
-
   const vid = effective.media?.reddit_video ?? effective.secure_media?.reddit_video;
-  if (vid || effective.post_hint === "hosted:video") {
+  const isVideo = vid || effective.post_hint === "hosted:video";
+  const oembedUrl = `${host}/reddit/oembed?title=${encodeURIComponent(post.title)}&url=${encodeURIComponent(originalUrl)}&type=${isVideo ? "video" : "link"}`;
+
+  if (isVideo) {
     const thumb = getPreviewImage(effective);
     const videoRoute = `${host}/reddit/video${permalink}`;
     return c.html(buildEmbedHtml({ title: authorLabel, description: post.title + "\n\n" + fullDesc, url: originalUrl, videoUrl: videoRoute, videoWidth: vid?.width ?? 1280, videoHeight: vid?.height ?? 720, imageUrl: thumb?.url, color: REDDIT_COLOR, siteName: "Reddit", twitterCard: "player", oembedUrl }));
@@ -112,7 +113,7 @@ export const redditRouter = new Hono();
 
 redditRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "link", author_name: q.title, author_url: q.url, provider_name: "LinkEmbedder / Reddit" }));
+  return c.json(buildOEmbed({ type: (q.type as any) || "link", author_name: q.title, author_url: q.url, provider_name: "LinkEmbedder / Reddit" }));
 });
 
 redditRouter.get("/video/*", async c => {

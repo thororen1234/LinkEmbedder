@@ -76,13 +76,13 @@ async function handleEmbed(c: Context, blog: string, postId: string): Promise<Re
   const host = getOrigin(c);
   const postUrl = post.shortUrl ?? originalUrl;
   const title = `${post.blog_name} on Tumblr`;
-  const oembedUrl = `${host}/tumblr/oembed?blog=${encodeURIComponent(post.blog_name)}&url=${encodeURIComponent(postUrl)}`;
   const blocks = getAllBlocks(post);
+  const video = getFirstVideo(blocks);
+  const oembedUrl = `${host}/tumblr/oembed?blog=${encodeURIComponent(post.blog_name)}&url=${encodeURIComponent(postUrl)}&type=${video ? "video" : "link"}`;
 
   const textContent = parseTextBlocks(blocks);
   const description = post.summary && post.summary !== textContent ? `${post.summary}\n\n${textContent}` : textContent;
 
-  const video = getFirstVideo(blocks);
   if (video) return c.html(buildEmbedHtml({ title, description, url: postUrl, proxyUrl: c.req.url, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, imageUrl: video.poster, color: TUMBLR_COLOR, siteName: "Tumblr", twitterCard: "player", oembedUrl }));
 
   const images = getImages(blocks);
@@ -101,7 +101,7 @@ export const tumblrRouter = new Hono();
 
 tumblrRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "link", author_name: q.blog, author_url: q.url, provider_name: "LinkEmbedder / Tumblr" }));
+  return c.json(buildOEmbed({ type: (q.type as any) || "link", author_name: q.blog, author_url: q.url, provider_name: "LinkEmbedder / Tumblr" }));
 });
 
 tumblrRouter.get("/grid/:blog/:id", async c => {

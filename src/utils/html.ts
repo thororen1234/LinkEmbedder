@@ -77,7 +77,6 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
   }
 
   const metas: string[] = [
-    `<meta http-equiv="refresh" content="0; url=${esc(url)}" />`,
     meta("og:url", proxyUrl ?? url),
     meta("og:type", type ?? (videoUrl ? "video.other" : "website")),
     meta("og:site_name", siteName),
