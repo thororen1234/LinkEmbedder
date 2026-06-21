@@ -142,7 +142,25 @@ instagramRouter.get("/videos/:id/:n/video.mp4", async c => {
   const idx = Math.max(1, parseInt(n, 10)) - 1;
   const mediaUrl = data.medias[idx]?.url;
   if (!mediaUrl) return c.redirect(`https://www.instagram.com/p/${id}/`, 302);
-  return c.redirect(mediaUrl, 302);
+
+  try {
+    const videoRes = await fetch(mediaUrl, {
+      headers: {
+        Referer: "https://www.instagram.com/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+        Accept: "*/*"
+      }
+    });
+    if (!videoRes.ok) return c.redirect(mediaUrl, 302);
+
+    const proxyHeaders = new Headers();
+    ["Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"].forEach(h => {
+      if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
+    });
+    return new Response(videoRes.body, { status: videoRes.status, headers: proxyHeaders });
+  } catch {
+    return c.redirect(mediaUrl, 302);
+  }
 });
 
 instagramRouter.get("/grid/:id", async c => {

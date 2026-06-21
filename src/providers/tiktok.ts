@@ -151,7 +151,7 @@ export const tiktokRouter = new Hono();
 
 tiktokRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "video", author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / TikTok" }));
+  return c.json(buildOEmbed({ type: "link", author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / TikTok" }));
 });
 
 tiktokRouter.get("/images/:videoId/:n", async c => {
@@ -186,14 +186,13 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
     const videoRes = await fetch(playAddrUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-        Accept: "*/*"
-      },
-      redirect: "manual"
+        Accept: "*/*",
+        Referer: "https://www.tiktok.com/"
+      }
     });
 
-    if (videoRes.status === 302 || videoRes.status === 301) {
-      return c.redirect(videoRes.headers.get("Location") || playAddrUrl, 302);
-    }
+    if (!videoRes.ok) return c.redirect(playAddrUrl, 302);
+
     const proxyHeaders = new Headers();
     ["Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"].forEach(h => {
       if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
