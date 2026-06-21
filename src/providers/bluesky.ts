@@ -17,7 +17,7 @@ interface BskyEmbed {
   media?: BskyEmbed; record?: BskyEmbed;
 }
 interface BskyAuthor { did: string; handle: string; displayName?: string; avatar?: string; followersCount?: number; followsCount?: number; postsCount?: number; description?: string; }
-interface BskyPost { uri: string; cid: string; author: BskyAuthor; record: { text?: string; }; embed?: BskyEmbed; likeCount?: number; repostCount?: number; replyCount?: number; }
+interface BskyPost { uri: string; cid: string; author: BskyAuthor; record: { text?: string; createdAt?: string; }; embed?: BskyEmbed; likeCount?: number; repostCount?: number; replyCount?: number; }
 interface BskyThreadView { $type: string; post?: BskyPost; }
 
 async function fetchPost(actor: string, rkey: string): Promise<BskyPost | null> {
@@ -90,7 +90,9 @@ async function handlePostEmbed(c: Context, user: string, postId: string, embedIn
   const description = text;
   const host = getOrigin(c);
   const video = getVideo(post.embed, post.author.did);
-  const oembedUrl = `${host}/bsky/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}&ttype=${video ? "video" : "link"}`;
+
+  const dateTitle = post.record?.createdAt ? `${new Date(post.record.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : "Bluesky Video";
+  const oembedUrl = `${host}/bsky/oembed?author=${encodeURIComponent(video ? description : authorName)}&provider=${encodeURIComponent(video ? authorName : "")}&url=${encodeURIComponent(originalUrl)}&ttype=${video ? "video" : "link"}`;
 
   if (isDirect) {
     if (video) return c.redirect(video.url, 302);
@@ -98,7 +100,7 @@ async function handlePostEmbed(c: Context, user: string, postId: string, embedIn
     if (images.length) return c.redirect(images[Math.max(0, embedIndex >= 0 ? Math.min(embedIndex, images.length - 1) : 0)].fullsize, 302);
   }
 
-  if (video) return c.html(buildEmbedHtml({ description, url: originalUrl, videoUrl: video.url, videoWidth: video.width ?? 1080, videoHeight: video.height ?? 1080, imageUrl: video.thumb, color: BSKY_COLOR, siteName: "Bluesky", twitterCard: "player", oembedUrl }));
+  if (video) return c.html(buildEmbedHtml({ title: dateTitle, description, url: originalUrl, videoUrl: video.url, videoWidth: video.width ?? 1080, videoHeight: video.height ?? 1080, imageUrl: video.thumb, color: BSKY_COLOR, siteName: "Bluesky", twitterCard: "player", oembedUrl }));
 
   const images = getImages(post.embed);
   if (images.length) {
@@ -133,7 +135,7 @@ export const blueskyRouter = new Hono();
 
 blueskyRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: (q.ttype as any) || "link", author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / Bluesky" }));
+  return c.json(buildOEmbed({ type: (q.ttype as any) || "link", author_name: q.author, author_url: q.url, provider_name: q.provider || "LinkEmbedder / Bluesky" }));
 });
 
 blueskyRouter.get("/grid/:user/:post", async c => {
