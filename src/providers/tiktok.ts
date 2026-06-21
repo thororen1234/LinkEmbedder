@@ -112,13 +112,11 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
     }
   }
 
-  const coverObj = item.video?.cover;
-  const coverUrl = typeof coverObj === "string" ? coverObj : coverObj?.urlList?.[0];
-
+  const hasCover = !!(item.video?.cover ?? item.author?.avatarThumb);
   const playUrl = findPlayUrl(item.video);
   const videoUrl = playUrl ? `${host}/tiktok/play/${awemeId}/video.mp4` : postUrl;
 
-  return c.html(buildEmbedHtml({ description, url: postUrl, proxyUrl: c.req.url, videoUrl, videoWidth: item.video?.width ?? 1080, videoHeight: item.video?.height ?? 1920, imageUrl: coverUrl ?? item.author?.avatarThumb, color: TIKTOK_COLOR, siteName: "TikTok", twitterCard: "player", oembedUrl }));
+  return c.html(buildEmbedHtml({ description, url: postUrl, proxyUrl: c.req.url, videoUrl, videoWidth: item.video?.width ?? 1080, videoHeight: item.video?.height ?? 1920, imageUrl: hasCover ? `${host}/tiktok/cover/${awemeId}` : undefined, color: TIKTOK_COLOR, siteName: "TikTok", twitterCard: "player", oembedUrl }));
 }
 
 function findPlayUrl(video: TikTokVideo | undefined): string | undefined {
@@ -175,6 +173,17 @@ tiktokRouter.get("/grid/:videoId", async c => {
   return new Response(buffer as any, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" } });
 });
 
+tiktokRouter.get("/cover/:videoId", async c => {
+  const awemeId = c.req.param("videoId");
+  const item = await fetchVideoData(awemeId);
+  const coverObj = item?.video?.cover;
+  const coverUrl = typeof coverObj === "string" ? coverObj : coverObj?.urlList?.[0];
+  const fallback = item?.author?.avatarThumb;
+  const url = coverUrl ?? fallback;
+  if (!url) return new Response("Not found", { status: 404 });
+  return proxyImage(url, c);
+});
+
 tiktokRouter.get("/play/:videoId/video.mp4", async c => {
   const awemeId = c.req.param("videoId");
   tiktokCache.delete(awemeId);
@@ -183,20 +192,23 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
   if (!playAddrUrl) return c.redirect(`https://www.tiktok.com/@i/video/${awemeId}`, 302);
 
   try {
-    const videoRes = await fetch(playAddrUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-        Accept: "*/*",
-        Referer: "https://www.tiktok.com/"
-      }
-    });
+    const range = c.req.header("range");
+    const upstreamHeaders: Record<string, string> = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      Accept: "*/*",
+      Referer: "https://www.tiktok.com/"
+    };
+    if (range) upstreamHeaders.Range = range;
 
-    if (!videoRes.ok) return c.redirect(playAddrUrl, 302);
+    const videoRes = await fetch(playAddrUrl, { headers: upstreamHeaders });
+
+    if (!videoRes.ok && videoRes.status !== 206) return c.redirect(playAddrUrl, 302);
 
     const proxyHeaders = new Headers();
     ["Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"].forEach(h => {
       if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
     });
+    if (!proxyHeaders.has("Accept-Ranges")) proxyHeaders.set("Accept-Ranges", "bytes");
     return new Response(videoRes.body, { status: videoRes.status, headers: proxyHeaders });
   } catch {
     return c.redirect(playAddrUrl, 302);

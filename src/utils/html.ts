@@ -101,9 +101,6 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
     for (const img of images) {
       metas.push(meta("og:image", img));
       metas.push(nameMeta("twitter:image", img));
-      if (card === "player") {
-        metas.push(nameMeta("twitter:image", img));
-      }
     }
     if (imageWidth) metas.push(meta("og:image:width", String(imageWidth)));
     if (imageHeight) metas.push(meta("og:image:height", String(imageHeight)));

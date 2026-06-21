@@ -7,7 +7,7 @@ import { createMosaic } from "../utils/image.js";
 
 const INSTA_COLOR = "#E1306C";
 
-interface InstaMedia { typeName: string; url: string; }
+interface InstaMedia { typeName: string; url: string; thumbnailUrl?: string; }
 interface InstaData { postId: string; username: string; caption: string; medias: InstaMedia[]; }
 interface InstaProfile { username: string; fullName: string; biography: string; profilePicUrl: string; followersCount: number; followingCount: number; postsCount: number; }
 
@@ -41,7 +41,13 @@ async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
       ? html.match(/class="EmbeddedMediaVideo"[^>]*src="([^"]+)"/)
       : html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/);
     if (!mediaMatch || !username) return null;
-    return { postId, username, caption, medias: [{ typeName: isVideo ? "GraphVideo" : "GraphImage", url: mediaMatch[1].replace(/&amp;/g, "&") }] };
+    let thumbnailUrl: string | undefined;
+    if (isVideo) {
+      const posterMatch = html.match(/class="EmbeddedMediaVideo"[^>]*poster="([^"]+)"/)
+        ?? html.match(/poster="([^"]+)"[^>]*class="EmbeddedMediaVideo"/);
+      thumbnailUrl = posterMatch?.[1]?.replace(/&amp;/g, "&");
+    }
+    return { postId, username, caption, medias: [{ typeName: isVideo ? "GraphVideo" : "GraphImage", url: mediaMatch[1].replace(/&amp;/g, "&"), thumbnailUrl }] };
   } catch { return null; }
 }
 
@@ -71,7 +77,7 @@ async function scrapeFromGQL(postId: string): Promise<InstaData | null> {
       const videoUrl = node.video_url as string | undefined;
       const displayUrl = node.display_url as string | undefined;
       const typeName = (node.__typename as string | undefined) ?? (videoUrl ? "GraphVideo" : "GraphImage");
-      medias.push({ typeName, url: videoUrl ?? displayUrl ?? "" });
+      medias.push({ typeName, url: videoUrl ?? displayUrl ?? "", thumbnailUrl: videoUrl ? displayUrl : undefined });
     }
     return { postId, username, caption, medias };
   } catch { return null; }
@@ -134,6 +140,21 @@ instagramRouter.get("/images/:id/:n", async c => {
   } catch { return c.redirect(media.url, 302); }
 });
 
+instagramRouter.get("/thumb/:id/:n", async c => {
+  const { id, n } = c.req.param();
+  const data = await getInstaData(id);
+  if (!data) return c.redirect(`https://www.instagram.com/p/${id}/`, 302);
+  const idx = Math.max(1, parseInt(n, 10)) - 1;
+  const media = data.medias[idx];
+  const thumbUrl = media?.thumbnailUrl ?? media?.url;
+  if (!thumbUrl) return c.redirect(`https://www.instagram.com/p/${id}/`, 302);
+  try {
+    const imgRes = await fetch(thumbUrl, { headers: { Referer: "https://www.instagram.com/" } });
+    if (!imgRes.ok) return c.redirect(thumbUrl, 302);
+    return new Response(imgRes.body, { headers: { "Content-Type": imgRes.headers.get("content-type") ?? "image/jpeg", "Cache-Control": "public, max-age=86400" } });
+  } catch { return c.redirect(thumbUrl, 302); }
+});
+
 instagramRouter.get("/videos/:id/:n/video.mp4", async c => {
   const { id, n } = c.req.param();
   instagramCache.delete(id);
@@ -144,19 +165,22 @@ instagramRouter.get("/videos/:id/:n/video.mp4", async c => {
   if (!mediaUrl) return c.redirect(`https://www.instagram.com/p/${id}/`, 302);
 
   try {
-    const videoRes = await fetch(mediaUrl, {
-      headers: {
-        Referer: "https://www.instagram.com/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-        Accept: "*/*"
-      }
-    });
-    if (!videoRes.ok) return c.redirect(mediaUrl, 302);
+    const range = c.req.header("range");
+    const upstreamHeaders: Record<string, string> = {
+      Referer: "https://www.instagram.com/",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      Accept: "*/*"
+    };
+    if (range) upstreamHeaders.Range = range;
+
+    const videoRes = await fetch(mediaUrl, { headers: upstreamHeaders });
+    if (!videoRes.ok && videoRes.status !== 206) return c.redirect(mediaUrl, 302);
 
     const proxyHeaders = new Headers();
     ["Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"].forEach(h => {
       if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
     });
+    if (!proxyHeaders.has("Accept-Ranges")) proxyHeaders.set("Accept-Ranges", "bytes");
     return new Response(videoRes.body, { status: videoRes.status, headers: proxyHeaders });
   } catch {
     return c.redirect(mediaUrl, 302);
@@ -207,7 +231,7 @@ async function handleEmbed(c: Context): Promise<Response> {
   const n = idx + 1;
 
   if (isVideo) {
-    return c.html(buildEmbedHtml({ description, url: originalUrl, proxyUrl: c.req.url, videoUrl: `${host}/ig/videos/${postId}/${n}/video.mp4`, videoWidth: 1080, videoHeight: 1080, color: INSTA_COLOR, siteName: "Instagram", twitterCard: "player", oembedUrl }));
+    return c.html(buildEmbedHtml({ description, url: originalUrl, proxyUrl: c.req.url, videoUrl: `${host}/ig/videos/${postId}/${n}/video.mp4`, videoWidth: 1080, videoHeight: 1080, imageUrl: `${host}/ig/thumb/${postId}/${n}`, color: INSTA_COLOR, siteName: "Instagram", twitterCard: "player", oembedUrl }));
   }
   const galleryDesc = description;
   if (mediaNumParam) {
@@ -221,7 +245,7 @@ async function handleEmbed(c: Context): Promise<Response> {
 
 instagramRouter.get("/:username", c => {
   const username = c.req.param("username");
-  if (["p", "reel", "reels", "tv", "stories", "images", "videos", "oembed", "grid"].includes(username)) {
+  if (["p", "reel", "reels", "tv", "stories", "images", "videos", "thumb", "oembed", "grid"].includes(username)) {
     return c.notFound();
   }
   return handleProfileEmbed(c, username);
