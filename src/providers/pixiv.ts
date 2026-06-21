@@ -3,120 +3,172 @@ import type { Context } from 'hono';
 import { isBot } from '../utils/bot.js';
 import { buildEmbedHtml, buildOEmbed } from '../utils/html.js';
 import { pixivCache } from '../utils/cache.js';
+import fs from 'fs/promises';
+import path from 'path';
+import os from 'os';
+import { spawn } from 'child_process';
+import { extract } from 'zip-lib';
 
 const PIXIV_COLOR = '#0096FA';
-const MAX_IMAGES = parseInt(process.env.MAX_IMAGES ?? '3', 10);
 
-interface PixivUrls { mini?: string; thumb?: string; small?: string; regular?: string; original?: string; }
-interface PixivTag { tag: string; translation?: Record<string, string>; }
-interface PixivAjaxBody {
-  illustId: string; title: string; description: string; pageCount: number;
-  bookmarkCount: number; likeCount: number; viewCount: number;
-  userName: string; userId: string; urls: PixivUrls;
-  tags: { tags: PixivTag[] }; illustType: number; ai_type: number;
-  extraData: { meta: { canonical: string } };
-}
-interface PixivAjaxResponse { error: boolean; body: PixivAjaxBody; }
+interface PixivArtwork { id: string; title: string; userName: string; description: string; urls: { regular: string; original: string }; tags: { tags: Array<{ tag: string; translation?: { en: string } }> }; pageCount: number; illustType: number; }
+interface PixivData { body?: PixivArtwork; error?: boolean; message?: string; }
+interface UgoiraMeta { body?: { src: string; originalSrc: string; mime_type: string; frames: Array<{ file: string; delay: number }> } }
 
-function getPixivCookie(): string | null {
-  const raw = process.env.PIXIV_COOKIE;
-  if (!raw) return null;
-  const cookies = raw.split(',').map((c) => c.trim()).filter(Boolean);
-  if (!cookies.length) return null;
-  return cookies[Math.floor(Math.random() * cookies.length)];
-}
-
-async function fetchArtwork(illustId: string, lang = 'en'): Promise<PixivAjaxBody | null> {
-  const cacheKey = `${lang}:${illustId}`;
-  const cached = pixivCache.get(cacheKey) as PixivAjaxBody | undefined;
+async function fetchPixivData(id: string): Promise<PixivArtwork | null> {
+  const cached = pixivCache.get(id) as PixivArtwork | undefined;
   if (cached) return cached;
-  const cleanId = illustId.match(/^\d+/)?.[0] ?? illustId;
-  const headers: Record<string, string> = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    Referer: 'https://www.pixiv.net/',
-  };
-  const cookie = getPixivCookie();
-  if (cookie) headers['Cookie'] = `PHPSESSID=${cookie}`;
   try {
-    const res = await fetch(`https://www.pixiv.net/ajax/illust/${cleanId}?lang=${lang}`, { headers });
+    const res = await fetch(`https://www.pixiv.net/ajax/illust/${id}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept-Language': 'en-US,en;q=0.5' },
+    });
     if (!res.ok) return null;
-    const json = await res.json() as PixivAjaxResponse;
-    if (json.error) return null;
-    pixivCache.set(cacheKey, json.body);
-    return json.body;
+    const data = (await res.json()) as PixivData;
+    if (data.error || !data.body) return null;
+    pixivCache.set(id, data.body);
+    return data.body;
   } catch { return null; }
 }
 
-function buildImageProxyUrls(host: string, body: PixivAjaxBody): string[] {
-  const base = body.urls.regular ?? body.urls.original ?? '';
-  if (!base) return [];
+async function fetchUgoiraMeta(id: string): Promise<UgoiraMeta['body'] | null> {
   try {
-    const basePath = new URL(base).pathname;
-    const count = Math.min(body.pageCount, MAX_IMAGES);
-    return Array.from({ length: count }, (_, i) => {
-      const pagePath = i === 0 ? basePath : basePath.replace(/_p0_/, `_p${i}_`);
-      return `${host}/pixiv/i${pagePath}`;
+    const res = await fetch(`https://www.pixiv.net/ajax/illust/${id}/ugoira_meta`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept-Language': 'en-US,en;q=0.5' },
     });
-  } catch { return []; }
+    if (!res.ok) return null;
+    const data = (await res.json()) as UgoiraMeta;
+    return data.body || null;
+  } catch { return null; }
 }
 
-async function handleArtwork(c: Context, illustId: string, lang = 'en', imageIndex = 0): Promise<Response> {
-  const cleanId = illustId.match(/^\d+/)?.[0] ?? illustId;
+async function proxyImage(url: string, c: Context): Promise<Response> {
+  try {
+    const res = await fetch(url, { headers: { Referer: 'https://www.pixiv.net/' } });
+    if (!res.ok) return c.redirect(url, 302);
+    return new Response(res.body, { headers: { 'Content-Type': res.headers.get('content-type') ?? 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
+  } catch { return c.redirect(url, 302); }
+}
+
+async function buildUgoiraMp4(id: string, meta: UgoiraMeta['body']): Promise<Buffer | null> {
+  const cachedPath = path.join(os.tmpdir(), `pixiv_${id}.mp4`);
+  try {
+    const stat = await fs.stat(cachedPath);
+    if (stat.isFile()) return await fs.readFile(cachedPath);
+  } catch { }
+
+  const zipRes = await fetch(meta!.originalSrc, { headers: { Referer: 'https://www.pixiv.net/' } });
+  if (!zipRes.ok) return null;
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `ugoira_${id}_`));
+  const zipPath = path.join(tempDir, 'ugoira.zip');
+  await fs.writeFile(zipPath, Buffer.from(await zipRes.arrayBuffer()));
+
+  await extract(zipPath, tempDir);
+
+  const concatTxtPath = path.join(tempDir, 'concat.txt');
+  let concatTxt = '';
+  for (const frame of meta!.frames) {
+    concatTxt += `file '${path.join(tempDir, frame.file).replace(/\\/g, '/')}'\n`;
+    concatTxt += `duration ${frame.delay / 1000}\n`;
+  }
+  concatTxt += `file '${path.join(tempDir, meta!.frames[meta!.frames.length - 1].file).replace(/\\/g, '/')}'\n`;
+  await fs.writeFile(concatTxtPath, concatTxt);
+
+  return new Promise((resolve) => {
+    const ffmpegProcess = spawn('ffmpeg', [
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', concatTxtPath,
+      '-c:v', 'libx264',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      '-y',
+      cachedPath
+    ]);
+
+    ffmpegProcess.on('close', async (code) => {
+      if (code === 0) {
+        try {
+          const buf = await fs.readFile(cachedPath);
+          resolve(buf);
+        } catch {
+          resolve(null);
+        }
+      } else {
+        console.error(`ffmpeg exited with code ${code}`);
+        resolve(null);
+      }
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    });
+
+    ffmpegProcess.on('error', async (err) => {
+      console.error('Ugoira ffmpeg spawn error:', err);
+      resolve(null);
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    });
+  });
+}
+
+async function handleEmbed(c: Context): Promise<Response> {
+  const id = c.req.param('id') as string;
+  const path = c.req.path;
+  const originalUrl = path.includes('/en/') ? `https://www.pixiv.net/en/artworks/${id}` : `https://www.pixiv.net/artworks/${id}`;
   const ua = c.req.header('user-agent');
-  const originalUrl = `https://www.pixiv.net/${lang}/artworks/${cleanId}`;
   if (!isBot(ua)) return c.redirect(originalUrl, 302);
 
-  const body = await fetchArtwork(cleanId, lang);
-  if (!body) return c.redirect(originalUrl, 302);
+  const data = await fetchPixivData(id);
+  if (!data) return c.redirect(originalUrl, 302);
 
+  const authorName = `${data.userName}`;
+  const rawDesc = data.description.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '');
+  const tags = data.tags.tags.map((t) => `#${t.translation?.en ?? t.tag}`).join(' ');
+  const description = `${rawDesc}\n\n${tags}`;
   const host = new URL(c.req.url).origin;
-  const imageUrls = buildImageProxyUrls(host, body);
-  if (!imageUrls.length) return c.redirect(originalUrl, 302);
+  const oembedUrl = `${host}/pixiv/oembed?title=${encodeURIComponent(data.title)}&author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}`;
 
-  const idx = Math.max(0, Math.min(imageIndex, imageUrls.length - 1));
-  const oembedUrl = `${host}/pixiv/oembed?author=${encodeURIComponent(body.userName)}&url=${encodeURIComponent(`https://www.pixiv.net/${lang}/users/${body.userId}`)}`;
-  const tags = body.tags.tags.map((t) => `#${t.translation?.[lang] ?? t.tag}`).join(', ');
-  const aiLabel = body.ai_type === 2 ? '[AI Generated] ' : '';
-  const rawDesc = body.description.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim().slice(0, 200);
-  const description = [aiLabel + rawDesc, tags].filter(Boolean).join('\n');
+  if (data.illustType === 2) {
+    const videoRoute = `${host}/pixiv/i/ugoira/${id}.mp4`;
+    const imageRoute = `${host}/pixiv/i/${id}/1`;
+    return c.html(buildEmbedHtml({ title: data.title, description, url: originalUrl, videoUrl: videoRoute, imageUrl: imageRoute, color: PIXIV_COLOR, siteName: 'Pixiv', twitterCard: 'player', oembedUrl }));
+  }
 
-  return c.html(buildEmbedHtml({
-    title: `${body.title} — ${body.userName}`,
-    description,
-    url: body.extraData.meta.canonical,
-    imageUrl: imageUrls[idx],
-    color: PIXIV_COLOR,
-    siteName: 'Pixiv',
-    largeImage: true,
-    oembedUrl,
-  }));
+  const imageRoute = `${host}/pixiv/i/${id}/1`;
+  return c.html(buildEmbedHtml({ title: data.title, description, url: originalUrl, imageUrl: imageRoute, color: PIXIV_COLOR, siteName: 'Pixiv', largeImage: true, oembedUrl }));
 }
 
 export const pixivRouter = new Hono();
 
 pixivRouter.get('/oembed', (c) => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: 'photo', author_name: q.author, author_url: q.url, provider_name: 'LinkEmbedder / Pixiv' }));
+  return c.json(buildOEmbed({ type: 'link', title: q.title, author_name: q.author, author_url: q.url, provider_name: 'LinkEmbedder / Pixiv' }));
 });
 
-pixivRouter.get('/i/*', async (c) => {
-  const path = c.req.path.replace('/pixiv/i', '');
-  const imgUrl = `https://i.pximg.net${path}`;
-  try {
-    const res = await fetch(imgUrl, { headers: { Referer: 'https://www.pixiv.net/' } });
-    if (!res.ok) return c.redirect(imgUrl, 302);
-    return new Response(res.body, { headers: { 'Content-Type': res.headers.get('content-type') ?? 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
-  } catch { return c.redirect(imgUrl, 302); }
+pixivRouter.get('/i/:id/:page', async (c) => {
+  const id = c.req.param('id') as string;
+  const page = parseInt(c.req.param('page'), 10) - 1;
+  const data = await fetchPixivData(id);
+  if (!data) return c.notFound();
+  let url = data.urls.original;
+  if (page > 0) {
+    url = url.replace(/_p0/, `_p${page}`);
+  }
+  return proxyImage(url, c);
 });
 
-pixivRouter.get('/member_illust.php', (c) => {
-  const illustId = c.req.query('illust_id');
-  if (!illustId) return c.redirect('https://www.pixiv.net/', 302);
-  return handleArtwork(c, illustId);
+pixivRouter.get('/i/ugoira/:id.mp4', async (c) => {
+  const id = c.req.param('id') as string;
+  const data = await fetchPixivData(id);
+  if (!data || data.illustType !== 2) return c.notFound();
+
+  const meta = await fetchUgoiraMeta(id);
+  if (!meta) return c.redirect(data.urls.original, 302);
+
+  const mp4Buf = await buildUgoiraMp4(id, meta);
+  if (!mp4Buf) return c.redirect(data.urls.original, 302);
+
+  return new Response(mp4Buf as any, { headers: { 'Content-Type': 'video/mp4', 'Cache-Control': 'public, max-age=86400' } });
 });
 
-pixivRouter.get('/artworks/:id', (c) => handleArtwork(c, c.req.param('id')));
-pixivRouter.get('/artworks/:id/:imageIndex', (c) => handleArtwork(c, c.req.param('id'), 'en', parseInt(c.req.param('imageIndex'), 10)));
-pixivRouter.get('/:lang/artworks/:id', (c) => handleArtwork(c, c.req.param('id'), c.req.param('lang')));
-pixivRouter.get('/:lang/artworks/:id/:imageIndex', (c) => handleArtwork(c, c.req.param('id'), c.req.param('lang'), parseInt(c.req.param('imageIndex'), 10)));
-pixivRouter.get('/i/:id', (c) => handleArtwork(c, c.req.param('id')));
+for (const pattern of ['/artworks/:id', '/en/artworks/:id', '/artworks/:id/:imageIndex', '/en/artworks/:id/:imageIndex']) {
+  pixivRouter.get(pattern, handleEmbed);
+}

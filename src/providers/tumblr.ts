@@ -3,11 +3,13 @@ import type { Context } from 'hono';
 import { isBot } from '../utils/bot.js';
 import { buildEmbedHtml, buildOEmbed } from '../utils/html.js';
 import { tumblrCache } from '../utils/cache.js';
+import { createMosaic } from '../utils/image.js';
 
 const TUMBLR_COLOR = '#35465C';
 
 interface TumblrMedia { url?: string; type?: string; width?: number; height?: number; }
-interface TumblrBlock { type: string; text?: string; media?: TumblrMedia[]; url?: string; poster?: TumblrMedia[]; }
+interface TumblrFormatting { start: number; end: number; type: string; url?: string; }
+interface TumblrBlock { type: string; text?: string; formatting?: TumblrFormatting[]; media?: TumblrMedia[]; url?: string; poster?: TumblrMedia[]; }
 interface TumblrPost { id_string: string; blog_name: string; summary?: string; content?: TumblrBlock[]; trail?: Array<{ content?: TumblrBlock[] }>; shortUrl?: string; }
 
 async function fetchPost(blog: string, postId: string): Promise<TumblrPost | null> {
@@ -31,14 +33,15 @@ function getAllBlocks(post: TumblrPost): TumblrBlock[] {
   return [...(post.content ?? []), ...(post.trail ?? []).flatMap((t) => t.content ?? [])];
 }
 
-function getFirstImage(blocks: TumblrBlock[]): { url: string; width?: number; height?: number } | null {
+function getImages(blocks: TumblrBlock[]): Array<{ url: string; width?: number; height?: number }> {
+  const imgs: Array<{ url: string; width?: number; height?: number }> = [];
   for (const b of blocks) {
     if (b.type === 'image' && b.media?.length) {
       const best = b.media.reduce((a, c) => ((c.width ?? 0) > (a.width ?? 0) ? c : a));
-      if (best.url) return { url: best.url, width: best.width, height: best.height };
+      if (best.url) imgs.push({ url: best.url, width: best.width, height: best.height });
     }
   }
-  return null;
+  return imgs;
 }
 
 function getFirstVideo(blocks: TumblrBlock[]): { url: string; width?: number; height?: number; poster?: string } | null {
@@ -50,6 +53,18 @@ function getFirstVideo(blocks: TumblrBlock[]): { url: string; width?: number; he
     }
   }
   return null;
+}
+
+function parseTextBlocks(blocks: TumblrBlock[]): string {
+  let res = '';
+  for (const b of blocks) {
+    if (b.type === 'text' && b.text) {
+      // Basic formatting parsing (ignoring exact positions for simplicity in Discord, just getting text)
+      // A more complex parser would slice the string and insert markdown.
+      res += b.text + '\n';
+    }
+  }
+  return res.trim().slice(0, 500);
 }
 
 async function handleEmbed(c: Context, blog: string, postId: string): Promise<Response> {
@@ -65,13 +80,21 @@ async function handleEmbed(c: Context, blog: string, postId: string): Promise<Re
   const title = `${post.blog_name} on Tumblr`;
   const oembedUrl = `${host}/tumblr/oembed?blog=${encodeURIComponent(post.blog_name)}&url=${encodeURIComponent(postUrl)}`;
   const blocks = getAllBlocks(post);
-  const description = post.summary ?? blocks.filter((b) => b.type === 'text' && b.text).map((b) => b.text!).join('\n').slice(0, 500);
+  
+  const textContent = parseTextBlocks(blocks);
+  const description = post.summary && post.summary !== textContent ? `${post.summary}\n\n${textContent}` : textContent;
 
   const video = getFirstVideo(blocks);
   if (video) return c.html(buildEmbedHtml({ title, description, url: postUrl, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, imageUrl: video.poster, color: TUMBLR_COLOR, siteName: 'Tumblr', twitterCard: 'player', oembedUrl }));
 
-  const image = getFirstImage(blocks);
-  if (image) return c.html(buildEmbedHtml({ title, description, url: postUrl, imageUrl: image.url, imageWidth: image.width, imageHeight: image.height, color: TUMBLR_COLOR, siteName: 'Tumblr', largeImage: true, oembedUrl }));
+  const images = getImages(blocks);
+  if (images.length > 1) {
+    const imageUrl = `${host}/tumblr/grid/${blog}/${postId}`;
+    return c.html(buildEmbedHtml({ title, description, url: postUrl, imageUrl, color: TUMBLR_COLOR, siteName: 'Tumblr', largeImage: true, oembedUrl }));
+  } else if (images.length === 1) {
+    const image = images[0];
+    return c.html(buildEmbedHtml({ title, description, url: postUrl, imageUrl: image.url, imageWidth: image.width, imageHeight: image.height, color: TUMBLR_COLOR, siteName: 'Tumblr', largeImage: true, oembedUrl }));
+  }
 
   return c.html(buildEmbedHtml({ title, description, url: postUrl, color: TUMBLR_COLOR, siteName: 'Tumblr', oembedUrl }));
 }
@@ -81,6 +104,19 @@ export const tumblrRouter = new Hono();
 tumblrRouter.get('/oembed', (c) => {
   const q = c.req.query();
   return c.json(buildOEmbed({ type: 'link', author_name: q.blog, author_url: q.url, provider_name: 'LinkEmbedder / Tumblr' }));
+});
+
+tumblrRouter.get('/grid/:blog/:id', async (c) => {
+  const blog = c.req.param('blog');
+  const postId = c.req.param('id');
+  const post = await fetchPost(blog, postId);
+  if (!post) return new Response('Not found', { status: 404 });
+  const blocks = getAllBlocks(post);
+  const imgs = getImages(blocks).map(i => i.url);
+  if (!imgs.length) return new Response('Not found', { status: 404 });
+  const buffer = await createMosaic(imgs);
+  if (!buffer) return c.redirect(imgs[0], 302);
+  return new Response(buffer as any, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
 });
 
 tumblrRouter.get('/:blog/:id', (c) => handleEmbed(c, c.req.param('blog'), c.req.param('id')));

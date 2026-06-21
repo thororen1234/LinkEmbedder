@@ -12,7 +12,10 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
-    "hono": "^4.12.26"
+    "cheerio": "^1.2.0",
+    "hono": "^4.12.26",
+    "sharp": "^0.35.2",
+    "zip-lib": "^1.4.0"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

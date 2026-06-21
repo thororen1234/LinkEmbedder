@@ -9,6 +9,14 @@ import { tiktokRouter } from './providers/tiktok.js';
 import { blueskyRouter } from './providers/bluesky.js';
 import { pixivRouter } from './providers/pixiv.js';
 import { tumblrRouter } from './providers/tumblr.js';
+import { twitchRouter } from './providers/twitch.js';
+import { bilibiliRouter } from './providers/bilibili.js';
+import { facebookRouter } from './providers/facebook.js';
+import { furaffinityRouter } from './providers/furaffinity.js';
+import { deviantartRouter } from './providers/deviantart.js';
+import { iwaraRouter } from './providers/iwara.js';
+import { pttRouter } from './providers/ptt.js';
+import { threadsRouter } from './providers/threads.js';
 
 try {
   const { readFileSync } = await import('fs');
@@ -58,6 +66,14 @@ app.get('/', (c) =>
     <tr><td><code>/bsky/</code></td><td>Bluesky</td><td><code>/bsky/profile/:user/post/:id</code></td></tr>
     <tr><td><code>/pixiv/</code></td><td>Pixiv</td><td><code>/pixiv/artworks/:id</code></td></tr>
     <tr><td><code>/tumblr/</code></td><td>Tumblr</td><td><code>/tumblr/:blog/:id</code></td></tr>
+    <tr><td><code>/twitch/</code></td><td>Twitch</td><td><code>/twitch/clip/:id</code></td></tr>
+    <tr><td><code>/bilibili/</code></td><td>Bilibili</td><td><code>/bilibili/:bvid</code></td></tr>
+    <tr><td><code>/facebook/</code></td><td>Facebook</td><td><code>/facebook/reel/:id</code></td></tr>
+    <tr><td><code>/furaffinity/</code></td><td>FurAffinity</td><td><code>/furaffinity/view/:id</code></td></tr>
+    <tr><td><code>/deviantart/</code></td><td>DeviantArt</td><td><code>/deviantart/art/:id</code></td></tr>
+    <tr><td><code>/iwara/</code></td><td>Iwara</td><td><code>/iwara/video/:id</code></td></tr>
+    <tr><td><code>/ptt/</code></td><td>PTT</td><td><code>/ptt/bbs/:board/:id</code></td></tr>
+    <tr><td><code>/threads/</code></td><td>Threads</td><td><code>/threads/@user/post/:id</code></td></tr>
   </tbody>
 </table>
 <p style="margin-top:2rem;color:#888;font-size:.85em;">
@@ -81,6 +97,14 @@ app.route('/tk', tiktokRouter);
 app.route('/bsky', blueskyRouter);
 app.route('/pixiv', pixivRouter);
 app.route('/tumblr', tumblrRouter);
+app.route('/twitch', twitchRouter);
+app.route('/bilibili', bilibiliRouter);
+app.route('/facebook', facebookRouter);
+app.route('/furaffinity', furaffinityRouter);
+app.route('/deviantart', deviantartRouter);
+app.route('/iwara', iwaraRouter);
+app.route('/ptt', pttRouter);
+app.route('/threads', threadsRouter);
 app.all('*', (c) =>
   c.json({ error: 'Not found. Check / for available routes.' }, 404)
 );

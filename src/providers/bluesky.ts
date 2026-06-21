@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import { isBot } from '../utils/bot.js';
 import { buildEmbedHtml, buildOEmbed } from '../utils/html.js';
 import { blueskyCache } from '../utils/cache.js';
+import { createMosaic } from '../utils/image.js';
 
 const BSKY_COLOR = '#0085FF';
 const BSKY_API = 'https://public.api.bsky.app/xrpc';
@@ -67,7 +68,7 @@ function getVideo(embed: BskyEmbed | undefined, did: string): { url: string; wid
   return check(embed);
 }
 
-async function handlePostEmbed(c: Context, user: string, postId: string): Promise<Response> {
+async function handlePostEmbed(c: Context, user: string, postId: string, embedIndex = -1): Promise<Response> {
   const ua = c.req.header('user-agent');
   const originalUrl = `https://bsky.app/profile/${user}/post/${postId}`;
   if (!isBot(ua)) return c.redirect(originalUrl, 302);
@@ -87,9 +88,17 @@ async function handlePostEmbed(c: Context, user: string, postId: string): Promis
 
   const images = getImages(post.embed);
   if (images.length) {
-    const first = images[0];
-    const imageUrls = images.slice(0, 4).map(i => i.fullsize);
-    return c.html(buildEmbedHtml({ description, url: originalUrl, imageUrl: imageUrls, imageWidth: first.aspectRatio?.width, imageHeight: first.aspectRatio?.height, color: BSKY_COLOR, siteName: 'Bluesky', largeImage: true, oembedUrl }));
+    if (embedIndex >= 0) {
+      const idx = Math.min(embedIndex, images.length - 1);
+      const photo = images[idx];
+      return c.html(buildEmbedHtml({ description, url: originalUrl, imageUrl: photo.fullsize, imageWidth: photo.aspectRatio?.width, imageHeight: photo.aspectRatio?.height, color: BSKY_COLOR, siteName: 'Bluesky', largeImage: true, oembedUrl }));
+    } else if (images.length > 1) {
+      const imageUrl = `${host}/bsky/grid/${user}/${postId}`;
+      return c.html(buildEmbedHtml({ description, url: originalUrl, imageUrl, color: BSKY_COLOR, siteName: 'Bluesky', largeImage: true, oembedUrl }));
+    } else {
+      const first = images[0];
+      return c.html(buildEmbedHtml({ description, url: originalUrl, imageUrl: first.fullsize, imageWidth: first.aspectRatio?.width, imageHeight: first.aspectRatio?.height, color: BSKY_COLOR, siteName: 'Bluesky', largeImage: true, oembedUrl }));
+    }
   }
 
   const ext = post.embed?.$type === 'app.bsky.embed.external#view' ? post.embed.external : undefined;
@@ -103,8 +112,7 @@ async function handleProfileEmbed(c: Context, user: string): Promise<Response> {
   const profile = await fetchProfile(user);
   if (!profile) return c.redirect(originalUrl, 302);
   const displayName = profile.displayName ?? profile.handle;
-  const stats = [profile.followersCount != null ? `👥 ${profile.followersCount.toLocaleString()} followers` : '', profile.followsCount != null ? `➡️ ${profile.followsCount.toLocaleString()} following` : '', profile.postsCount != null ? `📝 ${profile.postsCount.toLocaleString()} posts` : ''].filter(Boolean).join(' · ');
-  return c.html(buildEmbedHtml({ title: `${displayName} (@${profile.handle})`, description: [profile.description, stats].filter(Boolean).join('\n\n'), url: originalUrl, imageUrl: profile.avatar, color: BSKY_COLOR, siteName: 'Bluesky' }));
+  return c.html(buildEmbedHtml({ title: `${displayName} (@${profile.handle})`, description: profile.description, url: originalUrl, imageUrl: profile.avatar, color: BSKY_COLOR, siteName: 'Bluesky' }));
 }
 
 export const blueskyRouter = new Hono();
@@ -114,9 +122,21 @@ blueskyRouter.get('/oembed', (c) => {
   return c.json(buildOEmbed({ type: 'link', author_name: q.author, author_url: q.url, provider_name: 'LinkEmbedder / Bluesky' }));
 });
 
+blueskyRouter.get('/grid/:user/:post', async (c) => {
+  const user = c.req.param('user');
+  const postId = c.req.param('post');
+  const post = await fetchPost(user, postId);
+  if (!post) return new Response('Not found', { status: 404 });
+  const images = getImages(post.embed).map(i => i.fullsize);
+  if (!images.length) return new Response('Not found', { status: 404 });
+  const buffer = await createMosaic(images);
+  if (!buffer) return c.redirect(images[0], 302);
+  return new Response(buffer as any, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
+});
+
 blueskyRouter.get('/profile/:user/post/:post', (c) => handlePostEmbed(c, c.req.param('user'), c.req.param('post')));
-blueskyRouter.get('/profile/:user/post/:post/:index', (c) => handlePostEmbed(c, c.req.param('user'), c.req.param('post')));
+blueskyRouter.get('/profile/:user/post/:post/:index', (c) => handlePostEmbed(c, c.req.param('user'), c.req.param('post'), parseInt(c.req.param('index') ?? '1', 10) - 1));
 blueskyRouter.get('/https://bsky.app/profile/:user/post/:post', (c) => handlePostEmbed(c, c.req.param('user'), c.req.param('post')));
-blueskyRouter.get('/https://bsky.app/profile/:user/post/:post/:index', (c) => handlePostEmbed(c, c.req.param('user'), c.req.param('post')));
+blueskyRouter.get('/https://bsky.app/profile/:user/post/:post/:index', (c) => handlePostEmbed(c, c.req.param('user'), c.req.param('post'), parseInt(c.req.param('index') ?? '1', 10) - 1));
 blueskyRouter.get('/profile/:user', (c) => handleProfileEmbed(c, c.req.param('user')));
 blueskyRouter.get('/https://bsky.app/profile/:user', (c) => handleProfileEmbed(c, c.req.param('user')));

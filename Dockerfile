@@ -14,6 +14,8 @@ RUN pnpm build
 FROM node:lts-alpine
 WORKDIR /app
 
+RUN apk add --no-cache ffmpeg
+
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable

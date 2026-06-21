@@ -3,11 +3,13 @@ import type { Context } from 'hono';
 import { isBot } from '../utils/bot.js';
 import { buildEmbedHtml, buildOEmbed } from '../utils/html.js';
 import { instagramCache } from '../utils/cache.js';
+import { createMosaic } from '../utils/image.js';
 
 const INSTA_COLOR = '#E1306C';
 
 interface InstaMedia { typeName: string; url: string; }
 interface InstaData { postId: string; username: string; caption: string; medias: InstaMedia[]; }
+interface InstaProfile { username: string; fullName: string; biography: string; profilePicUrl: string; followersCount: number; followingCount: number; postsCount: number; }
 
 const GQL_HEADERS: Record<string, string> = {
   Accept: '*/*', 'Accept-Language': 'en-US,en;q=0.9',
@@ -75,6 +77,32 @@ async function scrapeFromGQL(postId: string): Promise<InstaData | null> {
   } catch { return null; }
 }
 
+async function fetchProfile(username: string): Promise<InstaProfile | null> {
+  const cacheKey = `profile:${username}`;
+  const cached = instagramCache.get(cacheKey) as InstaProfile | undefined;
+  if (cached) return cached;
+  try {
+    const res = await fetch(`https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`, {
+      headers: { ...GQL_HEADERS, 'X-Ig-App-Id': '936619743392459' }
+    });
+    if (!res.ok) return null;
+    const json = await res.json() as any;
+    const user = json?.data?.user;
+    if (!user) return null;
+    const profile = {
+      username: user.username,
+      fullName: user.full_name,
+      biography: user.biography,
+      profilePicUrl: user.profile_pic_url_hd ?? user.profile_pic_url,
+      followersCount: user.edge_followed_by?.count ?? 0,
+      followingCount: user.edge_follow?.count ?? 0,
+      postsCount: user.edge_owner_to_timeline_media?.count ?? 0,
+    };
+    instagramCache.set(cacheKey, profile);
+    return profile;
+  } catch { return null; }
+}
+
 async function getInstaData(postId: string): Promise<InstaData | null> {
   const cached = instagramCache.get(postId) as InstaData | undefined;
   if (cached) return cached;
@@ -117,6 +145,26 @@ instagramRouter.get('/videos/:id/:n/video.mp4', async (c) => {
   return c.redirect(mediaUrl, 302);
 });
 
+instagramRouter.get('/grid/:id', async (c) => {
+  const id = c.req.param('id');
+  const data = await getInstaData(id);
+  if (!data) return new Response('Not found', { status: 404 });
+  const photos = data.medias.filter(m => !m.typeName.toLowerCase().includes('video')).map(m => m.url);
+  if (!photos.length) return new Response('Not found', { status: 404 });
+  const buffer = await createMosaic(photos);
+  if (!buffer) return c.redirect(photos[0], 302);
+  return new Response(buffer as any, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
+});
+
+async function handleProfileEmbed(c: Context, username: string): Promise<Response> {
+  const ua = c.req.header('user-agent');
+  const originalUrl = `https://www.instagram.com/${username}/`;
+  if (!isBot(ua)) return c.redirect(originalUrl, 302);
+  const profile = await fetchProfile(username);
+  if (!profile) return c.redirect(originalUrl, 302);
+  return c.html(buildEmbedHtml({ title: `${profile.fullName || profile.username} (@${profile.username})`, description: profile.biography, url: originalUrl, imageUrl: profile.profilePicUrl, color: INSTA_COLOR, siteName: 'Instagram' }));
+}
+
 async function handleEmbed(c: Context): Promise<Response> {
   const path = c.req.path;
   const postIdFromRoute = c.req.param('id') as string | undefined;
@@ -146,11 +194,20 @@ async function handleEmbed(c: Context): Promise<Response> {
   const galleryDesc = description;
   if (mediaNumParam) {
     return c.html(buildEmbedHtml({ description: galleryDesc, url: originalUrl, imageUrl: `${host}/ig/images/${postId}/${n}`, color: INSTA_COLOR, siteName: 'Instagram', largeImage: true, oembedUrl }));
+  } else if (data.medias.length > 1) {
+    return c.html(buildEmbedHtml({ description: galleryDesc, url: originalUrl, imageUrl: `${host}/ig/grid/${postId}`, color: INSTA_COLOR, siteName: 'Instagram', largeImage: true, oembedUrl }));
   } else {
-    const imageUrls = data.medias.slice(0, 4).map((_, i) => `${host}/ig/images/${postId}/${i + 1}`);
-    return c.html(buildEmbedHtml({ description: galleryDesc, url: originalUrl, imageUrl: imageUrls, color: INSTA_COLOR, siteName: 'Instagram', largeImage: true, oembedUrl }));
+    return c.html(buildEmbedHtml({ description: galleryDesc, url: originalUrl, imageUrl: `${host}/ig/images/${postId}/1`, color: INSTA_COLOR, siteName: 'Instagram', largeImage: true, oembedUrl }));
   }
 }
+
+instagramRouter.get('/:username', (c) => {
+  const username = c.req.param('username');
+  if (['p', 'reel', 'reels', 'tv', 'stories', 'images', 'videos', 'oembed', 'grid'].includes(username)) {
+    return c.notFound();
+  }
+  return handleProfileEmbed(c, username);
+});
 
 for (const pattern of ['/p/:id', '/p/:id/:mediaNum', '/reel/:id', '/reels/:id', '/tv/:id', '/stories/:username/:id', '/:username/p/:id', '/:username/p/:id/:mediaNum', '/:username/reel/:id']) {
   instagramRouter.get(pattern, handleEmbed);

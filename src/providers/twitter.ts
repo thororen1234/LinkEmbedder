@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import { isBot } from '../utils/bot.js';
 import { buildEmbedHtml, buildOEmbed } from '../utils/html.js';
 import { twitterCache } from '../utils/cache.js';
+import { createMosaic } from '../utils/image.js';
 
 const TWITTER_COLOR = '#1D9BF0';
 const SYNDICATION_BASE = 'https://cdn.syndication.twimg.com/tweet-result';
@@ -21,12 +22,17 @@ interface SyndicationTweet {
   id_str: string;
   full_text?: string;
   text?: string;
-  user?: { name: string; screen_name: string; profile_image_url_https?: string };
+  user?: { name: string; screen_name: string; profile_image_url_https?: string; description?: string; followers_count?: number; friends_count?: number; statuses_count?: number };
   extended_entities?: { media?: SyndicationMedia[] };
   entities?: { media?: SyndicationMedia[] };
   photos?: Array<{ url: string; width: number; height: number }>;
   video?: { url: string; poster?: string; aspectRatio?: [number, number] };
   mediaDetails?: SyndicationMedia[];
+  quoted_tweet?: SyndicationTweet;
+  card?: {
+    name?: string;
+    binding_values?: Record<string, { type: string; boolean_value?: boolean; string_value?: string }>;
+  };
 }
 
 async function fetchTweet(id: string): Promise<SyndicationTweet | null> {
@@ -72,6 +78,8 @@ function getPhotos(tweet: SyndicationTweet): Array<{ url: string; width?: number
   });
 }
 
+
+
 async function handleTweet(c: Context, tweetId: string, routeUser?: string, embedIndex = -1): Promise<Response> {
   const fallbackUrl = routeUser
     ? `https://x.com/${routeUser}/status/${tweetId}`
@@ -83,7 +91,10 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const tweet = await fetchTweet(tweetId);
   if (!tweet) return c.redirect(fallbackUrl, 302);
 
-  const text = tweet.full_text ?? tweet.text ?? '';
+  let text = tweet.full_text ?? tweet.text ?? '';
+
+
+
   const username = tweet.user?.screen_name ?? routeUser ?? 'unknown';
   const displayName = tweet.user?.name ?? username;
   const tweetUrl = `https://x.com/${username}/status/${tweetId}`;
@@ -103,10 +114,12 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
       const idx = Math.min(embedIndex, photos.length - 1);
       const photo = photos[idx];
       return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: photo.url, imageWidth: photo.width, imageHeight: photo.height, color: TWITTER_COLOR, siteName: 'Twitter / X', largeImage: true, oembedUrl }));
+    } else if (photos.length > 1) {
+      const imageUrl = `${host}/twitter/grid/${tweetId}`;
+      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl, color: TWITTER_COLOR, siteName: 'Twitter / X', largeImage: true, oembedUrl }));
     } else {
-      const imageUrls = photos.slice(0, 4).map(p => p.url);
       const first = photos[0];
-      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: imageUrls, imageWidth: first.width, imageHeight: first.height, color: TWITTER_COLOR, siteName: 'Twitter / X', largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: first.url, imageWidth: first.width, imageHeight: first.height, color: TWITTER_COLOR, siteName: 'Twitter / X', largeImage: true, oembedUrl }));
     }
   }
 
@@ -120,6 +133,33 @@ twitterRouter.get('/oembed', (c) => {
   return c.json(buildOEmbed({ type: (q.ttype as 'link' | 'photo' | 'video') ?? 'link', author_name: q.user, author_url: q.link, provider_name: q.provider ?? 'LinkEmbedder / Twitter' }));
 });
 
+twitterRouter.get('/grid/:id', async (c) => {
+  const id = c.req.param('id');
+  const tweet = await fetchTweet(id);
+  if (!tweet) return new Response('Not found', { status: 404 });
+  const photos = getPhotos(tweet).map(p => p.url);
+  if (!photos.length) return new Response('Not found', { status: 404 });
+  const buffer = await createMosaic(photos);
+  if (!buffer) return c.redirect(photos[0], 302);
+  return new Response(buffer as any, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
+});
+
+twitterRouter.get('/:user/status/:id/video.mp4', async (c) => {
+  const tweet = await fetchTweet(c.req.param('id'));
+  if (!tweet) return new Response('Not found', { status: 404 });
+  const video = getBestVideo(tweet);
+  if (video) return c.redirect(video.url, 302);
+  return new Response('No video found', { status: 404 });
+});
+
+twitterRouter.get('/:user/status/:id/image.png', async (c) => {
+  const tweet = await fetchTweet(c.req.param('id'));
+  if (!tweet) return new Response('Not found', { status: 404 });
+  const photos = getPhotos(tweet);
+  if (photos.length) return c.redirect(photos[0].url, 302);
+  return new Response('No image found', { status: 404 });
+});
+
 twitterRouter.get('/:user/status/:id', (c) =>
   handleTweet(c, c.req.param('id'), c.req.param('user'))
 );
@@ -130,4 +170,3 @@ twitterRouter.get('/:user/status/:id/:index', (c) => {
 twitterRouter.get('/i/status/:id', (c) =>
   handleTweet(c, c.req.param('id'))
 );
-

@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import { isBot } from '../utils/bot.js';
 import { buildEmbedHtml, buildOEmbed } from '../utils/html.js';
 import { tiktokCache } from '../utils/cache.js';
+import { createMosaic } from '../utils/image.js';
 
 const TIKTOK_COLOR = '#010101';
 
@@ -24,6 +25,8 @@ const TIKTOK_HEADERS: Record<string, string> = {
 
 const AWEME_LINK_PATTERN = /\/@([^/]+)\/(video|photo|live)\/(\d+)/;
 const AWEME_ID_PATTERN = /^\d{15,20}$/;
+
+export const tiktokRouter = new Hono();
 
 async function resolveShortLink(videoId: string): Promise<URL | null> {
   try {
@@ -71,7 +74,15 @@ async function fetchVideoData(awemeId: string): Promise<TikTokItem | null> {
   } catch { return null; }
 }
 
-async function handleVideoEmbed(c: Context, awemeId: string): Promise<Response> {
+async function proxyImage(url: string, c: Context): Promise<Response> {
+  try {
+    const res = await fetch(url, { headers: { Referer: 'https://www.tiktok.com/' } });
+    if (!res.ok) return c.redirect(url, 302);
+    return new Response(res.body, { headers: { 'Content-Type': res.headers.get('content-type') ?? 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
+  } catch { return c.redirect(url, 302); }
+}
+
+async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): Promise<Response> {
   const ua = c.req.header('user-agent');
   const tiktokUrl = `https://www.tiktok.com/@i/video/${awemeId}`;
   if (!isBot(ua)) return c.redirect(tiktokUrl, 302);
@@ -93,9 +104,14 @@ async function handleVideoEmbed(c: Context, awemeId: string): Promise<Response> 
 
   if (item.imagePost?.images?.length) {
     const images = item.imagePost.images;
-    const imageUrls = images.slice(0, 4).map(i => i.imageURL?.urlList?.[0]).filter(Boolean) as string[];
-    const count = images.length;
-    return c.html(buildEmbedHtml({ description, url: postUrl, imageUrl: imageUrls, color: TIKTOK_COLOR, siteName: 'TikTok', largeImage: true, oembedUrl }));
+    if (embedIndex >= 0) {
+      const idx = Math.min(embedIndex, images.length - 1);
+      return c.html(buildEmbedHtml({ description, url: postUrl, imageUrl: `${host}/tiktok/images/${awemeId}/${idx + 1}`, color: TIKTOK_COLOR, siteName: 'TikTok', largeImage: true, oembedUrl }));
+    } else if (images.length > 1) {
+      return c.html(buildEmbedHtml({ description, url: postUrl, imageUrl: `${host}/tiktok/grid/${awemeId}`, color: TIKTOK_COLOR, siteName: 'TikTok', largeImage: true, oembedUrl }));
+    } else {
+      return c.html(buildEmbedHtml({ description, url: postUrl, imageUrl: `${host}/tiktok/images/${awemeId}/1`, color: TIKTOK_COLOR, siteName: 'TikTok', largeImage: true, oembedUrl }));
+    }
   }
 
   const coverObj = item.video?.cover;
@@ -133,11 +149,30 @@ function findPlayUrl(video: TikTokVideo | undefined): string | undefined {
   return undefined;
 }
 
-export const tiktokRouter = new Hono();
-
 tiktokRouter.get('/oembed', (c) => {
   const q = c.req.query();
   return c.json(buildOEmbed({ type: 'video', author_name: q.author, author_url: q.url, provider_name: 'LinkEmbedder / TikTok' }));
+});
+
+tiktokRouter.get('/images/:videoId/:n', async (c) => {
+  const awemeId = c.req.param('videoId');
+  const n = parseInt(c.req.param('n'), 10) - 1;
+  const item = await fetchVideoData(awemeId);
+  const imgs = item?.imagePost?.images;
+  if (!imgs || !imgs.length) return new Response('Not found', { status: 404 });
+  const url = imgs[Math.max(0, Math.min(n, imgs.length - 1))]?.imageURL?.urlList?.[0];
+  if (!url) return new Response('Not found', { status: 404 });
+  return proxyImage(url, c);
+});
+
+tiktokRouter.get('/grid/:videoId', async (c) => {
+  const awemeId = c.req.param('videoId');
+  const item = await fetchVideoData(awemeId);
+  const imgs = item?.imagePost?.images?.map(i => i.imageURL?.urlList?.[0]).filter(Boolean) as string[];
+  if (!imgs || !imgs.length) return new Response('Not found', { status: 404 });
+  const buffer = await createMosaic(imgs);
+  if (!buffer) return c.redirect(imgs[0], 302);
+  return new Response(buffer as any, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
 });
 
 tiktokRouter.get('/play/:videoId/video.mp4', async (c) => {
@@ -182,7 +217,9 @@ tiktokRouter.get('/:videoId', async (c) => {
 });
 
 tiktokRouter.get('/@:user/video/:videoId', (c) => handleVideoEmbed(c, c.req.param('videoId').split('.')[0]));
+tiktokRouter.get('/@:user/video/:videoId/:index', (c) => handleVideoEmbed(c, c.req.param('videoId').split('.')[0], parseInt(c.req.param('index'), 10) - 1));
 tiktokRouter.get('/@:user/photo/:videoId', (c) => handleVideoEmbed(c, c.req.param('videoId').split('.')[0]));
+tiktokRouter.get('/@:user/photo/:videoId/:index', (c) => handleVideoEmbed(c, c.req.param('videoId').split('.')[0], parseInt(c.req.param('index'), 10) - 1));
 tiktokRouter.get('/*/video/:videoId', (c) => handleVideoEmbed(c, c.req.param('videoId').split('.')[0]));
 
 tiktokRouter.get('/@:user/live', async (c) => {
