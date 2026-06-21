@@ -122,7 +122,29 @@ tiktokRouter.get('/play/:videoId/video.mp4', async (c) => {
   const playAddrObj = item?.video?.playAddr;
   const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : playAddrObj?.urlList?.[0];
   if (!playAddrUrl) return c.redirect(`https://www.tiktok.com/@i/video/${awemeId}`, 302);
-  return c.redirect(playAddrUrl, 302);
+
+  try {
+    const videoRes = await fetch(playAddrUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+        Accept: '*/*'
+      },
+      redirect: 'manual'
+    });
+
+    if (videoRes.status === 302 || videoRes.status === 301) {
+      return c.redirect(videoRes.headers.get('Location') || playAddrUrl, 302);
+    } else {
+      return new Response(videoRes.body, {
+        headers: {
+          'Content-Type': videoRes.headers.get('content-type') ?? 'video/mp4',
+          'Cache-Control': 'public, max-age=86400',
+        }
+      });
+    }
+  } catch {
+    return c.redirect(playAddrUrl, 302);
+  }
 });
 
 tiktokRouter.get('/:videoId', async (c) => {
