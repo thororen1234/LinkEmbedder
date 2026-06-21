@@ -1,8 +1,8 @@
 export interface EmbedOptions {
-  title: string;
+  title?: string;
   description?: string;
   url: string;
-  imageUrl?: string;
+  imageUrl?: string | string[];
   imageWidth?: number;
   imageHeight?: number;
   videoUrl?: string;
@@ -75,13 +75,16 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
   const metas: string[] = [
     `<meta http-equiv="refresh" content="0; url=${esc(url)}" />`,
     meta('og:url', url),
-    meta('og:title', title),
     meta('og:site_name', siteName),
     meta('theme-color', color),
     nameMeta('twitter:card', card),
-    nameMeta('twitter:title', title),
     nameMeta('twitter:site', siteName),
   ];
+
+  if (title) {
+    metas.push(meta('og:title', title));
+    metas.push(nameMeta('twitter:title', title));
+  }
 
   if (description) {
     metas.push(meta('og:description', description));
@@ -89,13 +92,16 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
   }
 
   if (imageUrl) {
-    metas.push(meta('og:image', imageUrl));
-    metas.push(nameMeta('twitter:image', imageUrl));
+    const images = Array.isArray(imageUrl) ? imageUrl : [imageUrl];
+    for (const img of images) {
+      metas.push(meta('og:image', img));
+      metas.push(nameMeta('twitter:image', img));
+      if (card === 'player') {
+        metas.push(nameMeta('twitter:image', img));
+      }
+    }
     if (imageWidth) metas.push(meta('og:image:width', String(imageWidth)));
     if (imageHeight) metas.push(meta('og:image:height', String(imageHeight)));
-    if (card === 'player') {
-      metas.push(nameMeta('twitter:image', imageUrl));
-    }
   }
 
   if (videoUrl) {

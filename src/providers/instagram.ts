@@ -127,20 +127,25 @@ async function handleEmbed(c: Context): Promise<Response> {
   const data = await getInstaData(postId);
   if (!data || !data.medias.length) return c.redirect(originalUrl, 302);
 
-  const title = `@${data.username}`;
+  const authorName = `@${data.username}`;
   const description = data.caption.slice(0, 300) + (data.caption.length > 300 ? '…' : '');
   const host = new URL(c.req.url).origin;
-  const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(title)}&url=${encodeURIComponent(originalUrl)}`;
+  const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}`;
   const idx = Math.max(0, (mediaNumParam || 1) - 1);
   const media = data.medias[Math.min(idx, data.medias.length - 1)];
   const isVideo = media.typeName.toLowerCase().includes('video');
   const n = idx + 1;
 
   if (isVideo) {
-    return c.html(buildEmbedHtml({ title, description, url: originalUrl, videoUrl: `${host}/ig/videos/${postId}/${n}`, videoWidth: 1080, videoHeight: 1080, color: INSTA_COLOR, siteName: 'Instagram', twitterCard: 'player', oembedUrl }));
+    return c.html(buildEmbedHtml({ description, url: originalUrl, videoUrl: `${host}/ig/videos/${postId}/${n}`, videoWidth: 1080, videoHeight: 1080, color: INSTA_COLOR, siteName: 'Instagram', twitterCard: 'player', oembedUrl }));
   }
   const galleryDesc = data.medias.length > 1 ? `${description}\n\n🖼️ ${data.medias.length} images` : description;
-  return c.html(buildEmbedHtml({ title, description: galleryDesc, url: originalUrl, imageUrl: `${host}/ig/images/${postId}/${n}`, color: INSTA_COLOR, siteName: 'Instagram', largeImage: true, oembedUrl }));
+  if (mediaNumParam) {
+    return c.html(buildEmbedHtml({ description: galleryDesc, url: originalUrl, imageUrl: `${host}/ig/images/${postId}/${n}`, color: INSTA_COLOR, siteName: 'Instagram', largeImage: true, oembedUrl }));
+  } else {
+    const imageUrls = data.medias.slice(0, 4).map((_, i) => `${host}/ig/images/${postId}/${i + 1}`);
+    return c.html(buildEmbedHtml({ description: galleryDesc, url: originalUrl, imageUrl: imageUrls, color: INSTA_COLOR, siteName: 'Instagram', largeImage: true, oembedUrl }));
+  }
 }
 
 for (const pattern of ['/p/:id', '/p/:id/:mediaNum', '/reel/:id', '/reels/:id', '/tv/:id', '/stories/:username/:id', '/:username/p/:id', '/:username/p/:id/:mediaNum', '/:username/reel/:id']) {

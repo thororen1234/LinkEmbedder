@@ -87,24 +87,30 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const username = tweet.user?.screen_name ?? routeUser ?? 'unknown';
   const displayName = tweet.user?.name ?? username;
   const tweetUrl = `https://x.com/${username}/status/${tweetId}`;
-  const title = `${displayName} (@${username})`;
+  const authorName = `${displayName} (@${username})`;
   const host = new URL(c.req.url).origin;
-  const oembedUrl = `${host}/twitter/oembed?desc=${encodeURIComponent(text)}&user=${encodeURIComponent(title)}&link=${encodeURIComponent(tweetUrl)}&ttype=link`;
+  const oembedUrl = `${host}/twitter/oembed?desc=${encodeURIComponent(text)}&user=${encodeURIComponent(authorName)}&link=${encodeURIComponent(tweetUrl)}&ttype=link`;
 
   const video = getBestVideo(tweet);
   if (video) {
-    return c.html(buildEmbedHtml({ title, description: text, url: tweetUrl, imageUrl: video.thumb, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, color: TWITTER_COLOR, siteName: 'Twitter / X', twitterCard: 'player', oembedUrl }));
+    return c.html(buildEmbedHtml({ description: text, url: tweetUrl, imageUrl: video.thumb, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, color: TWITTER_COLOR, siteName: 'Twitter / X', twitterCard: 'player', oembedUrl }));
   }
 
   const photos = getPhotos(tweet);
   if (photos.length) {
-    const idx = embedIndex >= 0 ? Math.min(embedIndex, photos.length - 1) : 0;
-    const photo = photos[idx];
     const desc = photos.length > 1 ? `${text}\n\n🖼️ ${photos.length} images` : text;
-    return c.html(buildEmbedHtml({ title, description: desc, url: tweetUrl, imageUrl: photo.url, imageWidth: photo.width, imageHeight: photo.height, color: TWITTER_COLOR, siteName: 'Twitter / X', largeImage: true, oembedUrl }));
+    if (embedIndex >= 0) {
+      const idx = Math.min(embedIndex, photos.length - 1);
+      const photo = photos[idx];
+      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: photo.url, imageWidth: photo.width, imageHeight: photo.height, color: TWITTER_COLOR, siteName: 'Twitter / X', largeImage: true, oembedUrl }));
+    } else {
+      const imageUrls = photos.slice(0, 4).map(p => p.url);
+      const first = photos[0];
+      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: imageUrls, imageWidth: first.width, imageHeight: first.height, color: TWITTER_COLOR, siteName: 'Twitter / X', largeImage: true, oembedUrl }));
+    }
   }
 
-  return c.html(buildEmbedHtml({ title, description: text, url: tweetUrl, color: TWITTER_COLOR, siteName: 'Twitter / X', oembedUrl }));
+  return c.html(buildEmbedHtml({ description: text, url: tweetUrl, color: TWITTER_COLOR, siteName: 'Twitter / X', oembedUrl }));
 }
 
 export const twitterRouter = new Hono();

@@ -7,7 +7,7 @@ import { tiktokCache } from '../utils/cache.js';
 const TIKTOK_COLOR = '#010101';
 
 interface TikTokAuthor { nickname?: string; uniqueId?: string; avatarThumb?: string; }
-interface TikTokVideo { width?: number; height?: number; duration?: number; }
+interface TikTokVideo { width?: number; height?: number; duration?: number; cover?: string | { urlList?: string[] }; playAddr?: string | { urlList?: string[] }; }
 interface TikTokStats { diggCount?: number; commentCount?: number; playCount?: number; }
 interface TikTokItem {
   id?: string; desc?: string; author?: TikTokAuthor; video?: TikTokVideo;
@@ -84,21 +84,29 @@ async function handleVideoEmbed(c: Context, awemeId: string): Promise<Response> 
 
   const username = item.author?.uniqueId ?? 'unknown';
   const displayName = item.author?.nickname ?? username;
-  const title = `${displayName} (@${username})`;
+  const authorName = `${displayName} (@${username})`;
   const description = item.desc ?? '';
   const postUrl = `https://www.tiktok.com/@${username}/video/${awemeId}`;
   const host = new URL(c.req.url).origin;
-  const oembedUrl = `${host}/tiktok/oembed?author=${encodeURIComponent(title)}&url=${encodeURIComponent(postUrl)}`;
+  const oembedUrl = `${host}/tiktok/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(postUrl)}`;
 
   if (item.imagePost?.images?.length) {
-    const firstImg = item.imagePost.images[0]?.imageURL?.urlList?.[0];
-    const count = item.imagePost.images.length;
-    return c.html(buildEmbedHtml({ title, description: description + (count > 1 ? `\n\n🖼️ ${count} photos` : ''), url: postUrl, imageUrl: firstImg, color: TIKTOK_COLOR, siteName: 'TikTok', largeImage: true, oembedUrl }));
+    const images = item.imagePost.images;
+    const imageUrls = images.slice(0, 4).map(i => i.imageURL?.urlList?.[0]).filter(Boolean) as string[];
+    const count = images.length;
+    return c.html(buildEmbedHtml({ description: description + (count > 1 ? `\n\n🖼️ ${count} photos` : ''), url: postUrl, imageUrl: imageUrls, color: TIKTOK_COLOR, siteName: 'TikTok', largeImage: true, oembedUrl }));
   }
 
   const stats = item.stats;
   const statsLine = stats ? `▶ ${(stats.playCount ?? 0).toLocaleString()} · ❤️ ${(stats.diggCount ?? 0).toLocaleString()} · 💬 ${(stats.commentCount ?? 0).toLocaleString()}` : '';
-  return c.html(buildEmbedHtml({ title, description: [description, statsLine].filter(Boolean).join('\n'), url: postUrl, videoUrl: postUrl, videoWidth: item.video?.width ?? 1080, videoHeight: item.video?.height ?? 1920, imageUrl: item.author?.avatarThumb, color: TIKTOK_COLOR, siteName: 'TikTok', twitterCard: 'player', oembedUrl }));
+  const coverObj = item.video?.cover;
+  const coverUrl = typeof coverObj === 'string' ? coverObj : coverObj?.urlList?.[0];
+
+  const playAddrObj = item.video?.playAddr;
+  const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : playAddrObj?.urlList?.[0];
+  const videoUrl = playAddrUrl ? `${host}/tiktok/play/${awemeId}` : postUrl;
+
+  return c.html(buildEmbedHtml({ description: [description, statsLine].filter(Boolean).join('\n'), url: postUrl, videoUrl, videoWidth: item.video?.width ?? 1080, videoHeight: item.video?.height ?? 1920, imageUrl: coverUrl ?? item.author?.avatarThumb, color: TIKTOK_COLOR, siteName: 'TikTok', twitterCard: 'player', oembedUrl }));
 }
 
 export const tiktokRouter = new Hono();
@@ -106,6 +114,15 @@ export const tiktokRouter = new Hono();
 tiktokRouter.get('/oembed', (c) => {
   const q = c.req.query();
   return c.json(buildOEmbed({ type: 'video', author_name: q.author, author_url: q.url, provider_name: 'LinkEmbedder / TikTok' }));
+});
+
+tiktokRouter.get('/play/:videoId', async (c) => {
+  const awemeId = c.req.param('videoId');
+  const item = await fetchVideoData(awemeId);
+  const playAddrObj = item?.video?.playAddr;
+  const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : playAddrObj?.urlList?.[0];
+  if (!playAddrUrl) return c.redirect(`https://www.tiktok.com/@i/video/${awemeId}`, 302);
+  return c.redirect(playAddrUrl, 302);
 });
 
 tiktokRouter.get('/:videoId', async (c) => {
