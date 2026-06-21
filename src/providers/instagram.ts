@@ -376,19 +376,7 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
   const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(`@${data.username}`)}&url=${encodeURIComponent(originalUrl)}&type=${isVideo ? "video" : "link"}`;
 
   if (isVideo) {
-    return c.html(buildEmbedHtml({
-      description,
-      url: originalUrl,
-      proxyUrl: c.req.url,
-      videoUrl: `https://instafix.thororen.com/videos/${postId}/${idx + 1}`,
-      videoWidth: 1080,
-      videoHeight: 1920,
-      imageUrl: `${host}/ig/thumb/${postId}/${idx + 1}`,
-      color: INSTA_COLOR,
-      siteName: "Instagram",
-      twitterCard: "player",
-      oembedUrl
-    }));
+    return c.redirect(`https://instafix.thororen.com/p/${postId}${idx > 0 ? `/${idx + 1}` : ""}`, 302);
   }
 
   if (isGrid) {
