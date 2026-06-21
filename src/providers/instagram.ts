@@ -367,7 +367,7 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
   const isGrid = data.medias.length > 1 && !imgIndexParam;
   const idx = Math.max(0, (parseInt(imgIndexParam || "1") - 1));
   const media = data.medias[Math.min(idx, data.medias.length - 1)];
-  const isVideo = media.typeName.includes("Video");
+  const isVideo = media.typeName.includes("Video") || ["reel", "reels", "tv"].includes(type);
 
   if (isDirect) {
     if (isVideo) return c.redirect(`https://instafix.thororen.com/videos/${postId}/${idx + 1}`, 302);
