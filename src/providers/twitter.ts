@@ -111,8 +111,9 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
       const photo = photos[idx];
       return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: photo.url, imageWidth: photo.width, imageHeight: photo.height, color: TWITTER_COLOR, siteName: "Twitter / X", largeImage: true, oembedUrl }));
     } else if (photos.length > 1) {
-      const imageUrl = `${host}/twitter/grid/${tweetId}`;
-      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl, color: TWITTER_COLOR, siteName: "Twitter / X", largeImage: true, oembedUrl }));
+      const imageUrls = photos.slice(0, 4).map(p => p.url);
+      const first = photos[0];
+      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: imageUrls, imageWidth: first.width, imageHeight: first.height, color: TWITTER_COLOR, siteName: "Twitter / X", largeImage: true, oembedUrl }));
     } else {
       const first = photos[0];
       return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: first.url, imageWidth: first.width, imageHeight: first.height, color: TWITTER_COLOR, siteName: "Twitter / X", largeImage: true, oembedUrl }));
