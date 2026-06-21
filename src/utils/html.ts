@@ -105,16 +105,15 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
   }
 
   if (videoUrl) {
-    metas.push(meta('og:type', 'video.other'));
+    if (videoWidth) metas.push(nameMeta('twitter:player:width', String(videoWidth)));
+    if (videoHeight) metas.push(nameMeta('twitter:player:height', String(videoHeight)));
+    metas.push(nameMeta('twitter:player:stream', videoUrl));
+    metas.push(nameMeta('twitter:player:stream:content_type', 'video/mp4'));
     metas.push(meta('og:video', videoUrl));
     metas.push(meta('og:video:secure_url', videoUrl));
     metas.push(meta('og:video:type', 'video/mp4'));
     if (videoWidth) metas.push(meta('og:video:width', String(videoWidth)));
     if (videoHeight) metas.push(meta('og:video:height', String(videoHeight)));
-    metas.push(nameMeta('twitter:player:stream', videoUrl));
-    metas.push(nameMeta('twitter:player:stream:content_type', 'video/mp4'));
-    if (videoWidth) metas.push(nameMeta('twitter:player:width', String(videoWidth)));
-    if (videoHeight) metas.push(nameMeta('twitter:player:height', String(videoHeight)));
   }
 
   if (oembedUrl) {
