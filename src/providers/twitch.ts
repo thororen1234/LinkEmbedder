@@ -98,10 +98,8 @@ async function handleClip(c: Context, clipId: string): Promise<Response> {
   const oembedUrl = `${host}/twitch/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.streamer)}&url=${encodeURIComponent(originalUrl)}`;
 
   const description = `👁️ ${info.views} views`;
-  const authorName = `${info.streamer} on Twitch`;
 
   return c.html(buildEmbedHtml({
-    title: authorName,
     description: `${info.title}\n\n${description}`,
     url: originalUrl,
     videoUrl: info.video_url,
@@ -122,4 +120,5 @@ twitchRouter.get("/oembed", c => {
 });
 
 twitchRouter.get("/clip/:id", c => handleClip(c, c.req.param("id")));
+twitchRouter.get("/:streamer/clip/:id", c => handleClip(c, c.req.param("id")));
 twitchRouter.get("/:id", c => handleClip(c, c.req.param("id")));

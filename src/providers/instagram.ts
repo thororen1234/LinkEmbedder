@@ -22,18 +22,84 @@ const GQL_HEADERS: Record<string, string> = {
   "sec-fetch-site": "same-origin",
 };
 
-const VIDEO_USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+const INSTAGRAM_MIRRORS = [
+  "instafix.thororen.com",
+  "kkinstagram.com",
+  "vxinstagram.com",
+  "eeinstagram.com",
+  "uuinstagram.com",
 ];
+
+function extractGqlData(html: string): any {
+  const marker = '\\"gql_data\\":\\"';
+  const startIdx = html.indexOf(marker);
+  if (startIdx === -1) return null;
+
+  const start = startIdx + marker.length;
+  let end = start;
+  while (end < html.length) {
+    if (html[end] === "\\" && html[end + 1] === '"') {
+      end += 2;
+      continue;
+    }
+    if (html[end] === '"' && html[end - 1] !== "\\") {
+      break;
+    }
+    end++;
+  }
+
+  try {
+    const escaped = html.substring(start, end);
+    const unescaped = JSON.parse('"' + escaped + '"');
+    return JSON.parse(unescaped);
+  } catch {
+    return null;
+  }
+}
+
+function parseGqlItem(item: any, postId: string): InstaData | null {
+  if (!item) return null;
+
+  const username = item.owner?.username ?? item.user?.username ?? "";
+  const caption = item.edge_media_to_caption?.edges?.[0]?.node?.text ?? item.caption?.text ?? "";
+
+  const medias: InstaMedia[] = [];
+  const sidecar = item.edge_sidecar_to_children?.edges;
+
+  const nodes = sidecar?.length ? sidecar.map((e: any) => e.node) : [item];
+
+  for (const node of nodes) {
+    const videoUrl = node.video_url;
+    const displayUrl = node.display_url;
+    const typeName = node.__typename ?? (videoUrl ? "GraphVideo" : "GraphImage");
+
+    medias.push({
+      typeName,
+      url: videoUrl ?? displayUrl ?? "",
+      thumbnailUrl: videoUrl ? displayUrl : undefined,
+    });
+  }
+
+  if (!medias.length) return null;
+  return { postId, username, caption, medias };
+}
 
 async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
   try {
     const res = await fetch(`https://www.instagram.com/p/${postId}/embed/captioned/`, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Discordbot/2.0)" },
+      headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1" },
     });
     if (!res.ok) return null;
     const html = await res.text();
+
+    const gqlData = extractGqlData(html);
+    if (gqlData) {
+      const item = gqlData.shortcode_media ?? gqlData.xdt_shortcode_media;
+      if (item) {
+        const parsed = parseGqlItem(item, postId);
+        if (parsed) return parsed;
+      }
+    }
 
     const usernameMatch = html.match(/class="UsernameText"[^>]*>([^<]+)/);
     const captionMatch = html.match(/class="Caption"[^>]*>([\s\S]*?)<\/div>/);
@@ -101,38 +167,75 @@ async function scrapeFromGQL(postId: string): Promise<InstaData | null> {
 
     const json = await res.json() as any;
     const item = json?.data?.shortcode_media ?? json?.data?.xdt_shortcode_media;
-    if (!item) return null;
-
-    const username = item.owner?.username ?? "";
-    const caption = item.edge_media_to_caption?.edges?.[0]?.node?.text ?? "";
-
-    const medias: InstaMedia[] = [];
-    const sidecar = item.edge_sidecar_to_children?.edges;
-
-    const nodes = sidecar?.length ? sidecar.map((e: any) => e.node) : [item];
-
-    for (const node of nodes) {
-      const videoUrl = node.video_url;
-      const displayUrl = node.display_url;
-      const typeName = node.__typename ?? (videoUrl ? "GraphVideo" : "GraphImage");
-
-      medias.push({
-        typeName,
-        url: videoUrl ?? displayUrl ?? "",
-        thumbnailUrl: videoUrl ? displayUrl : undefined,
-      });
-    }
-
-    return { postId, username, caption, medias };
+    return parseGqlItem(item, postId);
   } catch { return null; }
+}
+
+async function scrapeFromMirror(postId: string): Promise<InstaData | null> {
+  const ua = "TelegramBot (like TwitterBot)";
+
+  for (const mirror of INSTAGRAM_MIRRORS) {
+    try {
+      const medias: InstaMedia[] = [];
+      let username = "";
+      let caption = "";
+      let lastMediaUrl = "";
+
+      for (let n = 1; n <= 10; n++) {
+        const res = await fetch(`https://${mirror}/p/${postId}/${n}`, { headers: { "User-Agent": ua } });
+        if (!res.ok) break;
+        const html = await res.text();
+        if (!html.trim()) break;
+
+        if (n === 1) {
+          const titleMatch = html.match(/<meta\s+(?:property|name)="(?:og:title|twitter:title)"\s+content="([^"]*)"/);
+          if (titleMatch) {
+            const t = titleMatch[1].replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+            const candidate = t.replace(/^@/, "").split(" (")[0];
+            if (!INSTAGRAM_MIRRORS.some(m => m.split(".")[0] === candidate.toLowerCase())) {
+              username = candidate;
+            }
+          }
+          const descMatch = html.match(/<meta\s+(?:property|name)="og:description"\s+content="([^"]*)"/);
+          if (descMatch) caption = descMatch[1].replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+        }
+
+        const vidMatch = html.match(/<meta\s+property="og:video"\s+content="([^"]*)"/);
+        const imgMatch = html.match(/<meta\s+property="og:image"\s+content="([^"]*)"/);
+
+        let slideUrl = vidMatch?.[1] || imgMatch?.[1];
+        if (!slideUrl) break;
+
+        slideUrl = slideUrl.replace(/&amp;/g, "&");
+        if (slideUrl.startsWith("/")) slideUrl = `https://${mirror}${slideUrl}`;
+
+        if (lastMediaUrl === slideUrl) break;
+        lastMediaUrl = slideUrl;
+
+        medias.push({
+          typeName: vidMatch ? "GraphVideo" : "GraphImage",
+          url: slideUrl,
+          thumbnailUrl: vidMatch ? imgMatch?.[1]?.replace(/&amp;/g, "&") : undefined
+        });
+
+        if (vidMatch) break;
+      }
+
+      if (medias.length > 0) {
+        return { postId, username: username || "instagram", caption, medias };
+      }
+    } catch { continue; }
+  }
+  return null;
 }
 
 async function getInstaData(postId: string): Promise<InstaData | null> {
   const cached = instagramCache.get(postId) as InstaData | undefined;
   if (cached) return cached;
 
-  let data = await scrapeFromEmbed(postId);
-  if (!data?.medias?.length) data = await scrapeFromGQL(postId);
+  let data = await scrapeFromGQL(postId);
+  if (!data?.medias?.length) data = await scrapeFromEmbed(postId);
+  if (!data?.medias?.length) data = await scrapeFromMirror(postId);
 
   if (data) {
     instagramCache.set(postId, data);
@@ -188,23 +291,6 @@ instagramRouter.get("/thumb/:id/:n", async c => {
 
   return c.redirect(url, 302);
 });
-
-async function fetchVideoWithRetry(url: string) {
-  for (const ua of VIDEO_USER_AGENTS) {
-    try {
-      const res = await fetch(url, {
-        headers: {
-          Referer: "https://www.instagram.com/",
-          "User-Agent": ua,
-          Accept: "*/*"
-        },
-        redirect: "manual"
-      });
-      if (res.ok || res.status === 206) return res;
-    } catch { }
-  }
-  return null;
-}
 
 instagramRouter.get("/videos/:id/:n/video.mp4", async c => {
   const id = c.req.param("id");

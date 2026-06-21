@@ -5,6 +5,7 @@ import { tiktokCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 import { createMosaic } from "../utils/image.js";
 
+const TIKTOK_DOWNLOAD_UA = "Mozilla/5.0 (compatible; LinkEmbedder/1.0)";
 const TIKTOK_COLOR = "#010101";
 
 interface TikTokAuthor { nickname?: string; uniqueId?: string; avatarThumb?: string; }
@@ -63,24 +64,83 @@ function extractJsonFromScript(html: string, scriptId: string): unknown {
   try { return JSON.parse(html.substring(jsonStart, jsonEnd)); } catch { return null; }
 }
 
+async function fetchVideoDataFxTikTok(awemeId: string): Promise<TikTokItem | null> {
+  try {
+    const url = `https://fxtiktok.thororen.com/@i/video/${awemeId}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": TIKTOK_DOWNLOAD_UA }
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    if (!html.includes("og:video") && !html.includes("og:image")) return null;
+
+    const titleMatch = html.match(/<meta\s+(?:property|name)="(?:og:title|twitter:title)"\s+content="([^"]*)"/);
+    const descMatch = html.match(/<meta\s+(?:property|name)="og:description"\s+content="([^"]*)"/);
+    const vidMatch = html.match(/<meta\s+property="og:video"\s+content="([^"]*)"/);
+    const imgMatch = html.match(/<meta\s+property="og:image"\s+content="([^"]*)"/);
+
+    const title = titleMatch ? titleMatch[1].replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"') : "";
+    const desc = descMatch ? descMatch[1].replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">") : "";
+
+    const authorMatch = title.match(/(.*?)\s+\(@(.*?)\)/);
+    const nickname = authorMatch ? authorMatch[1].trim() : title;
+    const uniqueId = authorMatch ? authorMatch[2].trim() : "";
+
+    const item: TikTokItem = {
+      id: awemeId,
+      desc: desc,
+      author: {
+        nickname: nickname,
+        uniqueId: uniqueId,
+        avatarThumb: imgMatch ? imgMatch[1].replace(/&amp;/g, "&") : undefined
+      }
+    };
+
+    if (vidMatch) {
+      item.video = {
+        cover: imgMatch ? imgMatch[1].replace(/&amp;/g, "&") : undefined,
+        playAddr: vidMatch[1].replace(/&amp;/g, "&"),
+      };
+    } else if (imgMatch) {
+      item.imagePost = {
+        images: [{ imageURL: { urlList: [imgMatch[1].replace(/&amp;/g, "&")] } }]
+      };
+    }
+
+    return item;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchVideoData(awemeId: string): Promise<TikTokItem | null> {
   const cached = tiktokCache.get(awemeId) as TikTokItem | undefined;
   if (cached) return cached;
+
+  let item: TikTokItem | null = null;
 
   try {
     const res = await fetch(`https://www.tiktok.com/@i/video/${awemeId}`, {
       headers: TIKTOK_HEADERS
     });
-    if (!res.ok) return null;
+    if (res.ok) {
+      const html = await res.text();
+      const json = extractJsonFromScript(html, "__UNIVERSAL_DATA_FOR_REHYDRATION__") as any;
+      if (json?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo?.itemStruct) {
+        item = json.__DEFAULT_SCOPE__["webapp.video-detail"].itemInfo.itemStruct;
+      }
+    }
+  } catch { }
 
-    const html = await res.text();
-    const json = extractJsonFromScript(html, "__UNIVERSAL_DATA_FOR_REHYDRATION__") as any;
-    if (!json?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo?.itemStruct) return null;
+  if (!item) {
+    item = await fetchVideoDataFxTikTok(awemeId);
+  }
 
-    const item = json.__DEFAULT_SCOPE__["webapp.video-detail"].itemInfo.itemStruct;
+  if (item) {
     tiktokCache.set(awemeId, item);
-    return item;
-  } catch { return null; }
+  }
+
+  return item;
 }
 
 async function proxyImage(url: string, c: Context): Promise<Response> {
@@ -94,39 +154,6 @@ async function proxyImage(url: string, c: Context): Promise<Response> {
       }
     });
   } catch { return c.redirect(url, 302); }
-}
-
-async function fetchVideoWithRetry(playAddrUrl: string): Promise<Response | null> {
-  for (let attempt = 0; attempt < VIDEO_USER_AGENTS.length; attempt++) {
-    const headers: Record<string, string> = {
-      "User-Agent": VIDEO_USER_AGENTS[attempt],
-      Referer: "https://www.tiktok.com/",
-      Accept: "*/*",
-      "Accept-Encoding": "gzip, deflate, br",
-      "sec-fetch-site": "cross-site",
-    };
-
-    try {
-      const res = await fetch(playAddrUrl, {
-        headers,
-        redirect: "manual"
-      });
-
-      if (res.status === 301 || res.status === 302) {
-        const location = res.headers.get("location");
-        if (location) return new Response(null, { status: 302, headers: { Location: location } });
-      }
-
-      if (res.ok || res.status === 206) {
-        return res;
-      }
-    } catch (e) {
-      console.error(`Video fetch attempt ${attempt} failed:`, e);
-    }
-
-    await new Promise(r => setTimeout(r, 400));
-  }
-  return null;
 }
 
 function findPlayUrl(video: TikTokVideo | undefined): string | undefined {
@@ -215,15 +242,21 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
   }
 
   const range = c.req.header("range");
+
+  const isFxTikTok = playAddrUrl.includes("fxtiktok.thororen.com");
   const upstreamHeaders: Record<string, string> = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-    Referer: "https://www.tiktok.com/",
-    Origin: "https://www.tiktok.com",
+    "User-Agent": isFxTikTok ? TIKTOK_DOWNLOAD_UA : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/134.0.0.0",
     Accept: "*/*",
-    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Encoding": "identity",
     "sec-fetch-site": "cross-site",
     "sec-fetch-mode": "cors",
   };
+
+  if (!isFxTikTok) {
+    upstreamHeaders.Referer = "https://www.tiktok.com/";
+    upstreamHeaders.Origin = "https://www.tiktok.com";
+  }
+
   if (range) upstreamHeaders.Range = range;
 
   try {
@@ -240,7 +273,7 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
     }
 
     if (!videoRes.ok && videoRes.status !== 206) {
-      console.log(`TikTok video proxy still failed for ${awemeId} — status ${videoRes.status}`);
+      console.log(`TikTok video proxy failed for ${awemeId} — status ${videoRes.status} on URL: ${playAddrUrl}`);
       return c.redirect(playAddrUrl, 302);
     }
 

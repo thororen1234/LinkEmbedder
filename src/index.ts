@@ -91,7 +91,9 @@ app.get("/", c =>
     ],
     tumblr: [
       "/tumblr/:blog/:id",
-      "/tumblr/:blog/:id/:slug"
+      "/tumblr/:blog/:id/:slug",
+      "/tumblr/:blog/post/:id",
+      "/tumblr/:blog/post/:id/:slug"
     ],
     deviantart: [
       "/deviantart/*",
@@ -104,7 +106,8 @@ app.get("/", c =>
       "/fa/view/:id/*"
     ],
     twitch: [
-      "/twitch/clip/:id"
+      "/twitch/clip/:id",
+      "/twitch/:streamer/clip/:id"
     ],
     bilibili: [
       "/bilibili/:bvid"

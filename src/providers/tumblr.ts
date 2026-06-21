@@ -13,20 +13,54 @@ interface TumblrBlock { type: string; text?: string; formatting?: TumblrFormatti
 interface TumblrPost { id_string: string; blog_name: string; summary?: string; content?: TumblrBlock[]; trail?: Array<{ content?: TumblrBlock[] }>; shortUrl?: string; }
 
 async function fetchPost(blog: string, postId: string): Promise<TumblrPost | null> {
-  const apiKey = process.env.TUMBLR_API_KEY;
-  if (!apiKey) { console.warn("[tumblr] TUMBLR_API_KEY not set"); return null; }
   const cacheKey = `${blog}:${postId}`;
   const cached = tumblrCache.get(cacheKey) as TumblrPost | undefined;
   if (cached) return cached;
-  try {
-    const res = await fetch(`https://api.tumblr.com/v2/blog/${blog}/posts/${postId}?npf=true&api_key=${encodeURIComponent(apiKey)}`, { headers: { Accept: "application/json" } });
-    if (!res.ok) return null;
-    const json = await res.json() as { meta: { status: number }; response?: { posts?: TumblrPost[] } };
-    const post = json.response?.posts?.[0];
-    if (!post) return null;
-    tumblrCache.set(cacheKey, post);
-    return post;
-  } catch { return null; }
+
+  let post: TumblrPost | undefined;
+
+  const apiKey = process.env.TUMBLR_API_KEY;
+  if (apiKey) {
+    try {
+      const res = await fetch(`https://api.tumblr.com/v2/blog/${blog}/posts/${postId}?npf=true&api_key=${encodeURIComponent(apiKey)}`, { headers: { Accept: "application/json" } });
+      if (res.ok) {
+        const json = await res.json() as { meta: { status: number }; response?: { posts?: TumblrPost[] } };
+        post = json.response?.posts?.[0];
+      }
+    } catch { }
+  }
+
+  if (!post) {
+    try {
+      const res = await fetch(`https://embed.tumblr.com/embed/post/${blog}/${postId}/v2`);
+      if (res.ok) {
+        const html = await res.text();
+        const startToken = 'id="___INITIAL_STATE___">';
+        const startIdx = html.indexOf(startToken);
+        if (startIdx > -1) {
+          const start = startIdx + startToken.length;
+          const end = html.indexOf("</script>", start);
+          if (end > -1) {
+            const state = JSON.parse(html.substring(start, end));
+            for (const q of state.queries || []) {
+              const el = q.state?.data?.timeline?.elements?.[0];
+              if (el?.objectType === "post") {
+                post = el;
+                if ((post as any).blogName && !post!.blog_name) {
+                  post!.blog_name = (post as any).blogName;
+                }
+                break;
+              }
+            }
+          }
+        }
+      }
+    } catch { }
+  }
+
+  if (!post) return null;
+  tumblrCache.set(cacheKey, post);
+  return post;
 }
 
 function getAllBlocks(post: TumblrPost): TumblrBlock[] {
@@ -119,3 +153,5 @@ tumblrRouter.get("/grid/:blog/:id", async c => {
 
 tumblrRouter.get("/:blog/:id", c => handleEmbed(c, c.req.param("blog"), c.req.param("id")));
 tumblrRouter.get("/:blog/:id/:slug", c => handleEmbed(c, c.req.param("blog"), c.req.param("id")));
+tumblrRouter.get("/:blog/post/:id", c => handleEmbed(c, c.req.param("blog"), c.req.param("id")));
+tumblrRouter.get("/:blog/post/:id/:slug", c => handleEmbed(c, c.req.param("blog"), c.req.param("id")));

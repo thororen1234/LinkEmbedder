@@ -107,7 +107,9 @@ Every platform also has a documented set of accepted path formats (galleries, sp
   ],
   "tumblr": [
     "/tumblr/:blog/:id",
-    "/tumblr/:blog/:id/:slug"
+    "/tumblr/:blog/:id/:slug",
+    "/tumblr/:blog/post/:id",
+    "/tumblr/:blog/post/:id/:slug"
   ],
   "deviantart": [
     "/deviantart/*",
@@ -120,7 +122,8 @@ Every platform also has a documented set of accepted path formats (galleries, sp
     "/fa/view/:id/*"
   ],
   "twitch": [
-    "/twitch/clip/:id"
+    "/twitch/clip/:id",
+    "/twitch/:streamer/clip/:id"
   ],
   "bilibili": [
     "/bilibili/:bvid"
