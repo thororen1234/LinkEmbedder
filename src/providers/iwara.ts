@@ -1,6 +1,6 @@
 import { Context, Hono } from "hono";
 
-import { isBot } from "../utils/bot.js";
+import { getOrigin, isBot } from "../utils/bot.js";
 import { iwaraCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 
@@ -37,7 +37,7 @@ async function handleIwaraEmbed(c: Context, videoId: string, videoName: string):
   const info = await fetchIwaraInfo(videoId);
   if (!info) return c.redirect(originalUrl, 302);
 
-  const host = new URL(c.req.url).origin;
+  const host = getOrigin(c);
   const oembedUrl = `${host}/iwara/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.user.name)}&url=${encodeURIComponent(originalUrl)}`;
 
   const description = (info.body || "").slice(0, 500);

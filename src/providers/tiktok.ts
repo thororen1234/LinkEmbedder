@@ -1,6 +1,6 @@
 import { Context, Hono } from "hono";
 
-import { isBot } from "../utils/bot.js";
+import { getOrigin, isBot } from "../utils/bot.js";
 import { tiktokCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 import { createMosaic } from "../utils/image.js";
@@ -97,7 +97,7 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
   const authorName = `${displayName} (@${username})`;
   const description = item.desc ?? "";
   const postUrl = `https://www.tiktok.com/@${username}/video/${awemeId}`;
-  const host = new URL(c.req.url).origin;
+  const host = getOrigin(c);
   const oembedUrl = `${host}/tiktok/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(postUrl)}`;
 
   if (item.imagePost?.images?.length) {

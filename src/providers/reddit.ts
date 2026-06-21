@@ -1,6 +1,6 @@
 import { Context, Hono } from "hono";
 
-import { isBot } from "../utils/bot.js";
+import { getOrigin, isBot } from "../utils/bot.js";
 import { redditCache } from "../utils/cache.js";
 import { streamMux } from "../utils/ffmpeg.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
@@ -77,7 +77,7 @@ async function handlePost(permalink: string, c: Context): Promise<Response> {
 
   const effective = post.crosspost_parent_list?.[0] ?? post;
   const authorLabel = `u/${post.author} on r/${post.subreddit}`;
-  const host = new URL(c.req.url).origin;
+  const host = getOrigin(c);
   const oembedUrl = `${host}/reddit/oembed?title=${encodeURIComponent(post.title)}&url=${encodeURIComponent(originalUrl)}`;
   const desc = post.selftext?.trim() || post.title;
   const fullDesc = desc;

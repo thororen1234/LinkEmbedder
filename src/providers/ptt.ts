@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { Context, Hono } from "hono";
 
-import { isBot } from "../utils/bot.js";
+import { getOrigin, isBot } from "../utils/bot.js";
 import { pttCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 
@@ -61,7 +61,7 @@ async function handlePttEmbed(c: Context, board: string, id: string): Promise<Re
   const post = await fetchPttPost(board, id);
   if (!post) return c.redirect(originalUrl, 302);
 
-  const host = new URL(c.req.url).origin;
+  const host = getOrigin(c);
   const oembedUrl = `${host}/ptt/oembed?title=${encodeURIComponent(post.title)}&author=${encodeURIComponent(post.author)}&url=${encodeURIComponent(originalUrl)}`;
 
   if (post.images.length > 1) {

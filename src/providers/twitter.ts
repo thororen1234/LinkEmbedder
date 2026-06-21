@@ -1,6 +1,6 @@
 import { Context, Hono } from "hono";
 
-import { isBot } from "../utils/bot.js";
+import { getOrigin, isBot } from "../utils/bot.js";
 import { twitterCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 import { createMosaic } from "../utils/image.js";
@@ -95,7 +95,7 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const displayName = tweet.user?.name ?? username;
   const tweetUrl = `https://x.com/${username}/status/${tweetId}`;
   const authorName = `${displayName} (@${username})`;
-  const host = new URL(c.req.url).origin;
+  const host = getOrigin(c);
   const oembedUrl = `${host}/twitter/oembed?desc=${encodeURIComponent(text)}&user=${encodeURIComponent(authorName)}&link=${encodeURIComponent(tweetUrl)}&ttype=link`;
 
   const video = getBestVideo(tweet);

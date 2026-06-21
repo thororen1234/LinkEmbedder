@@ -1,6 +1,6 @@
 import { Context, Hono } from "hono";
 
-import { isBot } from "../utils/bot.js";
+import { getOrigin, isBot } from "../utils/bot.js";
 import { twitchCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 
@@ -94,7 +94,7 @@ async function handleClip(c: Context, clipId: string): Promise<Response> {
   const info = await fetchClipInfo(clipId);
   if (!info) return c.redirect(originalUrl, 302);
 
-  const host = new URL(c.req.url).origin;
+  const host = getOrigin(c);
   const oembedUrl = `${host}/twitch/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.streamer)}&url=${encodeURIComponent(originalUrl)}`;
 
   const description = `👁️ ${info.views} views`;

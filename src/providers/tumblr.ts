@@ -1,6 +1,6 @@
 import { Context, Hono } from "hono";
 
-import { isBot } from "../utils/bot.js";
+import { getOrigin, isBot } from "../utils/bot.js";
 import { tumblrCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 import { createMosaic } from "../utils/image.js";
@@ -73,7 +73,7 @@ async function handleEmbed(c: Context, blog: string, postId: string): Promise<Re
   const post = await fetchPost(blog, postId);
   if (!post) return c.redirect(originalUrl, 302);
 
-  const host = new URL(c.req.url).origin;
+  const host = getOrigin(c);
   const postUrl = post.shortUrl ?? originalUrl;
   const title = `${post.blog_name} on Tumblr`;
   const oembedUrl = `${host}/tumblr/oembed?blog=${encodeURIComponent(post.blog_name)}&url=${encodeURIComponent(postUrl)}`;

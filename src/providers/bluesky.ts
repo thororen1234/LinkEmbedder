@@ -1,6 +1,6 @@
 import { Context, Hono } from "hono";
 
-import { isBot } from "../utils/bot.js";
+import { getOrigin, isBot } from "../utils/bot.js";
 import { blueskyCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 import { createMosaic } from "../utils/image.js";
@@ -79,7 +79,7 @@ async function handlePostEmbed(c: Context, user: string, postId: string, embedIn
   const displayName = post.author.displayName ?? post.author.handle;
   const authorName = `${displayName} (@${post.author.handle})`;
   const text = post.record?.text ?? "";
-  const host = new URL(c.req.url).origin;
+  const host = getOrigin(c);
   const oembedUrl = `${host}/bsky/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}`;
   const description = text;
 

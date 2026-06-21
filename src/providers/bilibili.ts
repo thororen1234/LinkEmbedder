@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { Context, Hono } from "hono";
 
-import { isBot } from "../utils/bot.js";
+import { getOrigin, isBot } from "../utils/bot.js";
 import { bilibiliCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 
@@ -145,7 +145,7 @@ async function handleEmbed(c: Context, bvid: string): Promise<Response> {
   const info = await fetchVideoInfo(bvid);
   if (!info) return c.redirect(originalUrl, 302);
 
-  const host = new URL(c.req.url).origin;
+  const host = getOrigin(c);
   const oembedUrl = `${host}/bilibili/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.owner.name)}&url=${encodeURIComponent(originalUrl)}`;
 
   const videoUrl = `${host}/bilibili/play/${info.bvid}/${info.cid}/video.mp4`;

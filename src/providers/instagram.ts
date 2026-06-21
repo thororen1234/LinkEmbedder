@@ -1,6 +1,6 @@
 import { Context, Hono } from "hono";
 
-import { isBot } from "../utils/bot.js";
+import { getOrigin, isBot } from "../utils/bot.js";
 import { instagramCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 import { createMosaic } from "../utils/image.js";
@@ -223,7 +223,7 @@ async function handleEmbed(c: Context): Promise<Response> {
 
   const authorName = `@${data.username}`;
   const description = data.caption.slice(0, 300) + (data.caption.length > 300 ? "…" : "");
-  const host = new URL(c.req.url).origin;
+  const host = getOrigin(c);
   const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}`;
   const idx = Math.max(0, (mediaNumParam || 1) - 1);
   const media = data.medias[Math.min(idx, data.medias.length - 1)];

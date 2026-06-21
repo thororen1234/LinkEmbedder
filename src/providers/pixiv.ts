@@ -5,7 +5,7 @@ import os from "os";
 import path from "path";
 import { extract } from "zip-lib";
 
-import { isBot } from "../utils/bot.js";
+import { getOrigin, isBot } from "../utils/bot.js";
 import { pixivCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 
@@ -123,7 +123,7 @@ async function handleEmbed(c: Context): Promise<Response> {
   const rawDesc = data.description.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "");
   const tags = data.tags.tags.map(t => `#${t.translation?.en ?? t.tag}`).join(" ");
   const description = `${rawDesc}\n\n${tags}`;
-  const host = new URL(c.req.url).origin;
+  const host = getOrigin(c);
   const oembedUrl = `${host}/pixiv/oembed?title=${encodeURIComponent(data.title)}&author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}`;
 
   if (data.illustType === 2) {

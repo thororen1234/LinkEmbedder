@@ -1,6 +1,6 @@
 import { Context, Hono } from "hono";
 
-import { isBot } from "../utils/bot.js";
+import { getOrigin, isBot } from "../utils/bot.js";
 import { facebookCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 
@@ -39,7 +39,7 @@ async function handleFacebookEmbed(c: Context, url: string): Promise<Response> {
   if (!download) return c.redirect(url, 302);
 
   const description = post.description || "Facebook Video";
-  const host = new URL(c.req.url).origin;
+  const host = getOrigin(c);
   const oembedUrl = `${host}/facebook/oembed?title=${encodeURIComponent("Facebook Reels")}&url=${encodeURIComponent(post.source || url)}`;
 
   return c.html(buildEmbedHtml({
