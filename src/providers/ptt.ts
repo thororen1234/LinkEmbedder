@@ -53,10 +53,18 @@ async function fetchPttPost(board: string, id: string): Promise<PttPost | null> 
   } catch { return null; }
 }
 
-async function handlePttEmbed(c: Context, board: string, id: string): Promise<Response> {
+async function handlePttEmbed(c: Context, board: string, id: string, embedIndex = -1): Promise<Response> {
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
+  const imgIndexParam = c.req.query("img_index") ?? c.req.query("index");
+  if (imgIndexParam !== undefined && embedIndex === -1) {
+    embedIndex = parseInt(imgIndexParam, 10) - 1;
+  }
+
   const originalUrl = `https://www.ptt.cc/bbs/${board}/${id}.html`;
   const ua = c.req.header("user-agent");
-  if (!isBot(ua)) return c.redirect(originalUrl, 302);
+  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
 
   const post = await fetchPttPost(board, id);
   if (!post) return c.redirect(originalUrl, 302);
@@ -64,19 +72,30 @@ async function handlePttEmbed(c: Context, board: string, id: string): Promise<Re
   const host = getOrigin(c);
   const oembedUrl = `${host}/ptt/oembed?title=${encodeURIComponent(post.title)}&author=${encodeURIComponent(post.author)}&url=${encodeURIComponent(originalUrl)}`;
 
-  if (post.images.length > 1) {
+  if (isDirect) {
+    if (post.images.length > 0) {
+      const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, post.images.length - 1));
+      return c.redirect(post.images[idx], 302);
+    }
+    return c.redirect(originalUrl, 302);
+  }
+
+  if (post.images.length > 1 && embedIndex < 0) {
     const imageUrl = `${host}/ptt/grid/${board}/${id}`;
     return c.html(buildEmbedHtml({ title: `${post.title} - ${post.author}`, description: post.content, url: originalUrl, imageUrl, color: PTT_COLOR, siteName: "PTT", largeImage: true, oembedUrl }));
   }
+
+  const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, post.images.length - 1));
+  const selectedImage = post.images[idx];
 
   return c.html(buildEmbedHtml({
     title: `${post.title} - ${post.author}`,
     description: post.content,
     url: originalUrl,
-    imageUrl: post.images[0],
+    imageUrl: selectedImage,
     color: PTT_COLOR,
     siteName: "PTT",
-    largeImage: !!post.images[0],
+    largeImage: !!selectedImage,
     oembedUrl
   }));
 }
@@ -104,4 +123,37 @@ pttRouter.get("/grid/:board/:id", async c => {
 pttRouter.get("/bbs/:board/:id", c => {
   const id = c.req.param("id").replace(".html", "");
   return handlePttEmbed(c, c.req.param("board"), id);
+});
+
+function extractPttParams(urlStr: string): { board: string; id: string } | null {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("ptt.cc")) {
+      const match = url.pathname.match(/\/bbs\/([^/]+)\/([^.]+)\.html?/);
+      if (match) return { board: match[1], id: match[2] };
+    }
+  } catch {
+    const match = urlStr.match(/\/bbs\/([^/]+)\/([^.]+)\.html?/);
+    if (match) return { board: match[1], id: match[2] };
+  }
+  return null;
+}
+
+pttRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) {
+    const p = extractPttParams(url);
+    if (p) return handlePttEmbed(c, p.board, p.id);
+  }
+  return new Response("Not found", { status: 404 });
+});
+
+pttRouter.get("/*", c => {
+  const { path } = c.req;
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) {
+    const p = extractPttParams(httpMatch[1]);
+    if (p) return handlePttEmbed(c, p.board, p.id);
+  }
+  return new Response("Not found", { status: 404 });
 });

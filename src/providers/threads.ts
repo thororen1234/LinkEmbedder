@@ -96,34 +96,55 @@ async function fetchThreadsInfo(shortcode: string): Promise<ThreadsInfo | null> 
   } catch { return null; }
 }
 
-async function handleThreadsEmbed(c: Context, user: string, shortcode: string): Promise<Response> {
+async function handleThreadsEmbed(c: Context, user: string, shortcode: string, embedIndex = -1): Promise<Response> {
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
+  const imgIndexParam = c.req.query("img_index") ?? c.req.query("index");
+  if (imgIndexParam !== undefined && embedIndex === -1) {
+    embedIndex = parseInt(imgIndexParam, 10) - 1;
+  }
+
   const originalUrl = `https://www.threads.net/@${user}/post/${shortcode}`;
   const ua = c.req.header("user-agent");
-  if (!isBot(ua)) return c.redirect(originalUrl, 302);
+  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
 
   const info = await fetchThreadsInfo(shortcode);
   if (!info) return c.redirect(originalUrl, 302);
 
   const host = getOrigin(c);
+
+  if (isDirect) {
+    if (info.video) return c.redirect(info.video, 302);
+    if (info.images.length > 0) {
+      const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, info.images.length - 1));
+      return c.redirect(info.images[idx], 302);
+    }
+    return c.redirect(originalUrl, 302);
+  }
+
   const oembedUrl = `${host}/threads/oembed?title=${encodeURIComponent(info.oembedStat)}&author=${encodeURIComponent("@" + info.username)}&url=${encodeURIComponent(originalUrl)}`;
 
-  if (info.images.length > 1) {
+  if (info.images.length > 1 && embedIndex < 0) {
     const imageUrl = `${host}/threads/grid/${shortcode}`;
     return c.html(buildEmbedHtml({ title: `@${info.username} on Threads`, description: info.description, url: originalUrl, imageUrl, color: THREADS_COLOR, siteName: "Threads", largeImage: true, oembedUrl }));
   }
+
+  const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, info.images.length - 1));
+  const selectedImage = info.images[idx];
 
   return c.html(buildEmbedHtml({
     title: `@${info.username} on Threads`,
     description: info.description,
     url: originalUrl,
-    imageUrl: info.images[0],
+    imageUrl: selectedImage,
     videoUrl: info.video,
     videoWidth: info.video ? 720 : undefined,
     videoHeight: info.video ? 1280 : undefined,
     color: THREADS_COLOR,
     siteName: "Threads",
     twitterCard: info.video ? "player" : "summary_large_image",
-    largeImage: !!info.images[0],
+    largeImage: !!selectedImage,
     oembedUrl
   }));
 }
@@ -148,3 +169,36 @@ threadsRouter.get("/grid/:shortcode", async c => {
 });
 
 threadsRouter.get("/@:user/post/:shortcode", c => handleThreadsEmbed(c, c.req.param("user") as string, c.req.param("shortcode") as string));
+
+function extractThreadsParams(urlStr: string): { user: string; shortcode: string; } | null {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("threads.net")) {
+      const match = url.pathname.match(/\/@([^/]+)\/post\/([^/?]+)/);
+      if (match) return { user: match[1], shortcode: match[2] };
+    }
+  } catch {
+    const match = urlStr.match(/\/@([^/]+)\/post\/([^/?]+)/);
+    if (match) return { user: match[1], shortcode: match[2] };
+  }
+  return null;
+}
+
+threadsRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) {
+    const p = extractThreadsParams(url);
+    if (p) return handleThreadsEmbed(c, p.user, p.shortcode);
+  }
+  return new Response("Not found", { status: 404 });
+});
+
+threadsRouter.get("/*", c => {
+  const { path } = c.req;
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) {
+    const p = extractThreadsParams(httpMatch[1]);
+    if (p) return handleThreadsEmbed(c, p.user, p.shortcode);
+  }
+  return new Response("Not found", { status: 404 });
+});

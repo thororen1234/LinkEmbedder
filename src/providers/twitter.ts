@@ -12,26 +12,26 @@ interface SyndicationMedia {
   type: "photo" | "video" | "animated_gif";
   media_url_https?: string;
   video_info?: {
-    variants: Array<{ content_type: string; bitrate?: number; url: string }>;
+    variants: Array<{ content_type: string; bitrate?: number; url: string; }>;
     aspect_ratio?: [number, number];
   };
-  sizes?: { large?: { w: number; h: number }; orig?: { w: number; h: number } };
+  sizes?: { large?: { w: number; h: number; }; orig?: { w: number; h: number; }; };
 }
 
 interface SyndicationTweet {
   id_str: string;
   full_text?: string;
   text?: string;
-  user?: { name: string; screen_name: string; profile_image_url_https?: string; description?: string; followers_count?: number; friends_count?: number; statuses_count?: number };
-  extended_entities?: { media?: SyndicationMedia[] };
-  entities?: { media?: SyndicationMedia[] };
-  photos?: Array<{ url: string; width: number; height: number }>;
-  video?: { url: string; poster?: string; aspectRatio?: [number, number] };
+  user?: { name: string; screen_name: string; profile_image_url_https?: string; description?: string; followers_count?: number; friends_count?: number; statuses_count?: number; };
+  extended_entities?: { media?: SyndicationMedia[]; };
+  entities?: { media?: SyndicationMedia[]; };
+  photos?: Array<{ url: string; width: number; height: number; }>;
+  video?: { url: string; poster?: string; aspectRatio?: [number, number]; };
   mediaDetails?: SyndicationMedia[];
   quoted_tweet?: SyndicationTweet;
   card?: {
     name?: string;
-    binding_values?: Record<string, { type: string; boolean_value?: boolean; string_value?: string }>;
+    binding_values?: Record<string, { type: string; boolean_value?: boolean; string_value?: string; }>;
   };
 }
 
@@ -49,7 +49,7 @@ async function fetchTweet(id: string): Promise<SyndicationTweet | null> {
   } catch { return null; }
 }
 
-function getBestVideo(tweet: SyndicationTweet): { url: string; width?: number; height?: number; thumb?: string } | null {
+function getBestVideo(tweet: SyndicationTweet): { url: string; width?: number; height?: number; thumb?: string; } | null {
   if (tweet.video) {
     const ar = tweet.video.aspectRatio;
     return { url: tweet.video.url, width: ar?.[0] ? ar[0] * 100 : undefined, height: ar?.[1] ? ar[1] * 100 : undefined, thumb: tweet.video.poster };
@@ -69,7 +69,7 @@ function getBestVideo(tweet: SyndicationTweet): { url: string; width?: number; h
   return null;
 }
 
-function getPhotos(tweet: SyndicationTweet): Array<{ url: string; width?: number; height?: number }> {
+function getPhotos(tweet: SyndicationTweet): Array<{ url: string; width?: number; height?: number; }> {
   if (tweet.photos?.length) return tweet.photos.map(p => ({ url: p.url, width: p.width, height: p.height }));
   const medias = tweet.mediaDetails ?? tweet.extended_entities?.media ?? tweet.entities?.media ?? [];
   return medias.filter(m => m.type === "photo").map(m => {
@@ -83,8 +83,16 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
     ? `https://x.com/${routeUser}/status/${tweetId}`
     : `https://x.com/i/status/${tweetId}`;
 
+  const imgIndexParam = c.req.query("img_index") ?? c.req.query("index");
+  if (imgIndexParam !== undefined && embedIndex === -1) {
+    embedIndex = parseInt(imgIndexParam, 10) - 1;
+  }
+
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
   const ua = c.req.header("user-agent");
-  if (!isBot(ua)) return c.redirect(fallbackUrl, 302);
+  if (!isBot(ua) && !isDirect) return c.redirect(fallbackUrl, 302);
 
   const tweet = await fetchTweet(tweetId);
   if (!tweet) return c.redirect(fallbackUrl, 302);
@@ -97,6 +105,13 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const authorName = `${displayName} (@${username})`;
   const host = getOrigin(c);
   const video = getBestVideo(tweet);
+
+  if (isDirect) {
+    if (video) return c.redirect(video.url, 302);
+    const photos = getPhotos(tweet);
+    if (photos.length) return c.redirect(photos[Math.max(0, embedIndex >= 0 ? Math.min(embedIndex, photos.length - 1) : 0)].url, 302);
+  }
+
   const oembedUrl = `${host}/twitter/oembed?desc=${encodeURIComponent(text)}&user=${encodeURIComponent(authorName)}&link=${encodeURIComponent(tweetUrl)}&ttype=${video ? "video" : "link"}`;
 
   if (video) {
@@ -167,3 +182,36 @@ twitterRouter.get("/:user/status/:id/:index", c => {
 twitterRouter.get("/i/status/:id", c =>
   handleTweet(c, c.req.param("id"))
 );
+
+function extractTwitterParams(urlStr: string): { user?: string; id: string; index?: number; } | null {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("twitter.com") || url.hostname.includes("x.com")) {
+      const match = url.pathname.match(/\/?([^/]+)\/status\/(\d+)(?:\/photo\/(\d+))?/);
+      if (match) return { user: match[1] === "i" ? undefined : match[1], id: match[2], index: match[3] ? parseInt(match[3], 10) - 1 : undefined };
+    }
+  } catch {
+    const match = urlStr.match(/\/?([^/]+)\/status\/(\d+)(?:\/photo\/(\d+))?/);
+    if (match) return { user: match[1] === "i" ? undefined : match[1], id: match[2], index: match[3] ? parseInt(match[3], 10) - 1 : undefined };
+  }
+  return null;
+}
+
+twitterRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) {
+    const p = extractTwitterParams(url);
+    if (p) return handleTweet(c, p.id, p.user, p.index ?? -1);
+  }
+  return new Response("Not found", { status: 404 });
+});
+
+twitterRouter.get("/*", c => {
+  const { path } = c.req;
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) {
+    const p = extractTwitterParams(httpMatch[1]);
+    if (p) return handleTweet(c, p.id, p.user, p.index ?? -1);
+  }
+  return new Response("Not found", { status: 404 });
+});

@@ -11,9 +11,9 @@ import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 
 const PIXIV_COLOR = "#0096FA";
 
-interface PixivArtwork { id: string; title: string; userName: string; description: string; urls: { regular: string; original: string }; tags: { tags: Array<{ tag: string; translation?: { en: string } }> }; pageCount: number; illustType: number; }
+interface PixivArtwork { id: string; title: string; userName: string; description: string; urls: { regular: string; original: string; }; tags: { tags: Array<{ tag: string; translation?: { en: string; }; }>; }; pageCount: number; illustType: number; }
 interface PixivData { body?: PixivArtwork; error?: boolean; message?: string; }
-interface UgoiraMeta { body?: { src: string; originalSrc: string; mime_type: string; frames: Array<{ file: string; delay: number }> } }
+interface UgoiraMeta { body?: { src: string; originalSrc: string; mime_type: string; frames: Array<{ file: string; delay: number; }>; }; }
 
 async function fetchPixivData(id: string): Promise<PixivArtwork | null> {
   const cached = pixivCache.get(id) as PixivArtwork | undefined;
@@ -109,12 +109,16 @@ async function buildUgoiraMp4(id: string, meta: UgoiraMeta["body"]): Promise<Buf
   });
 }
 
-async function handleEmbed(c: Context): Promise<Response> {
-  const id = c.req.param("id") as string;
+async function handleEmbed(c: Context, manualId?: string, manualIndex?: string): Promise<Response> {
+  const id = manualId || c.req.param("id") as string;
   const { path } = c.req;
   const originalUrl = path.includes("/en/") ? `https://www.pixiv.net/en/artworks/${id}` : `https://www.pixiv.net/artworks/${id}`;
+
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
   const ua = c.req.header("user-agent");
-  if (!isBot(ua)) return c.redirect(originalUrl, 302);
+  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
 
   const data = await fetchPixivData(id);
   if (!data) return c.redirect(originalUrl, 302);
@@ -124,15 +128,24 @@ async function handleEmbed(c: Context): Promise<Response> {
   const tags = data.tags.tags.map(t => `#${t.translation?.en ?? t.tag}`).join(" ");
   const description = `${rawDesc}\n\n${tags}`;
   const host = getOrigin(c);
+
+  const imgIndexParam = c.req.query("img_index") ?? c.req.query("index");
+  const indexStr = manualIndex || c.req.param("imageIndex") || imgIndexParam || "1";
+
+  if (isDirect) {
+    if (data.illustType === 2) return c.redirect(`${host}/pixiv/i/ugoira/${id}.mp4`, 302);
+    return c.redirect(`${host}/pixiv/i/${id}/${indexStr}`, 302);
+  }
+
   const oembedUrl = `${host}/pixiv/oembed?title=${encodeURIComponent(data.title)}&author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}`;
 
   if (data.illustType === 2) {
     const videoRoute = `${host}/pixiv/i/ugoira/${id}.mp4`;
-    const imageRoute = `${host}/pixiv/i/${id}/1`;
+    const imageRoute = `${host}/pixiv/i/${id}/${indexStr}`;
     return c.html(buildEmbedHtml({ title: data.title, description, url: originalUrl, videoUrl: videoRoute, imageUrl: imageRoute, color: PIXIV_COLOR, siteName: "Pixiv", twitterCard: "player", oembedUrl }));
   }
 
-  const imageRoute = `${host}/pixiv/i/${id}/1`;
+  const imageRoute = `${host}/pixiv/i/${id}/${indexStr}`;
   return c.html(buildEmbedHtml({ title: data.title, description, url: originalUrl, imageUrl: imageRoute, color: PIXIV_COLOR, siteName: "Pixiv", largeImage: true, oembedUrl }));
 }
 
@@ -170,5 +183,38 @@ pixivRouter.get("/i/ugoira/:id.mp4", async c => {
 });
 
 for (const pattern of ["/artworks/:id", "/en/artworks/:id", "/artworks/:id/:imageIndex", "/en/artworks/:id/:imageIndex"]) {
-  pixivRouter.get(pattern, handleEmbed);
+  pixivRouter.get(pattern, c => handleEmbed(c));
 }
+
+function extractPixivParams(urlStr: string): { id: string; index?: string; } | null {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("pixiv.net")) {
+      const match = url.pathname.match(/(?:\/en)?\/artworks\/(\d+)(?:\/(\d+))?/);
+      if (match) return { id: match[1], index: match[2] };
+    }
+  } catch {
+    const match = urlStr.match(/(?:\/en)?\/artworks\/(\d+)(?:\/(\d+))?/);
+    if (match) return { id: match[1], index: match[2] };
+  }
+  return null;
+}
+
+pixivRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) {
+    const p = extractPixivParams(url);
+    if (p) return handleEmbed(c, p.id, p.index);
+  }
+  return new Response("Not found", { status: 404 });
+});
+
+pixivRouter.get("/*", c => {
+  const { path } = c.req;
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) {
+    const p = extractPixivParams(httpMatch[1]);
+    if (p) return handleEmbed(c, p.id, p.index);
+  }
+  return new Response("Not found", { status: 404 });
+});

@@ -8,16 +8,16 @@ import { createMosaic } from "../utils/image.js";
 const BSKY_COLOR = "#0085FF";
 const BSKY_API = "https://public.api.bsky.app/xrpc";
 
-interface BskyImage { thumb: string; fullsize: string; aspectRatio?: { width: number; height: number }; alt?: string; }
+interface BskyImage { thumb: string; fullsize: string; aspectRatio?: { width: number; height: number; }; alt?: string; }
 interface BskyEmbed {
   $type: string;
   images?: BskyImage[];
-  cid?: string; thumbnail?: string; aspectRatio?: { width: number; height: number };
-  external?: { uri: string; title?: string; description?: string; thumb?: string };
+  cid?: string; thumbnail?: string; aspectRatio?: { width: number; height: number; };
+  external?: { uri: string; title?: string; description?: string; thumb?: string; };
   media?: BskyEmbed; record?: BskyEmbed;
 }
 interface BskyAuthor { did: string; handle: string; displayName?: string; avatar?: string; followersCount?: number; followsCount?: number; postsCount?: number; description?: string; }
-interface BskyPost { uri: string; cid: string; author: BskyAuthor; record: { text?: string }; embed?: BskyEmbed; likeCount?: number; repostCount?: number; replyCount?: number; }
+interface BskyPost { uri: string; cid: string; author: BskyAuthor; record: { text?: string; }; embed?: BskyEmbed; likeCount?: number; repostCount?: number; replyCount?: number; }
 interface BskyThreadView { $type: string; post?: BskyPost; }
 
 async function fetchPost(actor: string, rkey: string): Promise<BskyPost | null> {
@@ -28,7 +28,7 @@ async function fetchPost(actor: string, rkey: string): Promise<BskyPost | null> 
     const uri = `at://${actor}/app.bsky.feed.post/${rkey}`;
     const res = await fetch(`${BSKY_API}/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0`, { headers: { Accept: "application/json" } });
     if (!res.ok) return null;
-    const json = await res.json() as { thread?: BskyThreadView };
+    const json = await res.json() as { thread?: BskyThreadView; };
     const post = json.thread?.post;
     if (!post) return null;
     blueskyCache.set(cacheKey, post);
@@ -55,7 +55,7 @@ function getImages(embed: BskyEmbed | undefined): BskyImage[] {
   return [];
 }
 
-function getVideo(embed: BskyEmbed | undefined, did: string): { url: string; width?: number; height?: number; thumb?: string } | null {
+function getVideo(embed: BskyEmbed | undefined, did: string): { url: string; width?: number; height?: number; thumb?: string; } | null {
   if (!embed) return null;
   const check = (e: BskyEmbed) => {
     if (e.$type === "app.bsky.embed.video#view" && e.cid) {
@@ -69,9 +69,17 @@ function getVideo(embed: BskyEmbed | undefined, did: string): { url: string; wid
 }
 
 async function handlePostEmbed(c: Context, user: string, postId: string, embedIndex = -1): Promise<Response> {
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
+  const imgIndexParam = c.req.query("img_index") ?? c.req.query("index");
+  if (imgIndexParam !== undefined && embedIndex === -1) {
+    embedIndex = parseInt(imgIndexParam, 10) - 1;
+  }
+
   const ua = c.req.header("user-agent");
   const originalUrl = `https://bsky.app/profile/${user}/post/${postId}`;
-  if (!isBot(ua)) return c.redirect(originalUrl, 302);
+  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
 
   const post = await fetchPost(user, postId);
   if (!post) return c.redirect(originalUrl, 302);
@@ -84,6 +92,12 @@ async function handlePostEmbed(c: Context, user: string, postId: string, embedIn
   const description = text;
 
   const video = getVideo(post.embed, post.author.did);
+  if (isDirect) {
+    if (video) return c.redirect(video.url, 302);
+    const images = getImages(post.embed);
+    if (images.length) return c.redirect(images[Math.max(0, embedIndex >= 0 ? Math.min(embedIndex, images.length - 1) : 0)].fullsize, 302);
+  }
+
   if (video) return c.html(buildEmbedHtml({ description, url: originalUrl, videoUrl: video.url, videoWidth: video.width ?? 1080, videoHeight: video.height ?? 1080, imageUrl: video.thumb, color: BSKY_COLOR, siteName: "Bluesky", twitterCard: "player", oembedUrl }));
 
   const images = getImages(post.embed);
@@ -136,7 +150,43 @@ blueskyRouter.get("/grid/:user/:post", async c => {
 
 blueskyRouter.get("/profile/:user/post/:post", c => handlePostEmbed(c, c.req.param("user"), c.req.param("post")));
 blueskyRouter.get("/profile/:user/post/:post/:index", c => handlePostEmbed(c, c.req.param("user"), c.req.param("post"), parseInt(c.req.param("index") ?? "1", 10) - 1));
-blueskyRouter.get("/https://bsky.app/profile/:user/post/:post", c => handlePostEmbed(c, c.req.param("user"), c.req.param("post")));
-blueskyRouter.get("/https://bsky.app/profile/:user/post/:post/:index", c => handlePostEmbed(c, c.req.param("user"), c.req.param("post"), parseInt(c.req.param("index") ?? "1", 10) - 1));
 blueskyRouter.get("/profile/:user", c => handleProfileEmbed(c, c.req.param("user")));
-blueskyRouter.get("/https://bsky.app/profile/:user", c => handleProfileEmbed(c, c.req.param("user")));
+
+function extractBlueskyParams(urlStr: string): { user: string; post?: string; index?: number; } | null {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("bsky.app")) {
+      const match = url.pathname.match(/\/profile\/([^/]+)(?:\/post\/([^/]+))?(?:\/(\d+))?/);
+      if (match) return { user: match[1], post: match[2], index: match[3] ? parseInt(match[3], 10) - 1 : undefined };
+    }
+  } catch {
+    const match = urlStr.match(/\/profile\/([^/]+)(?:\/post\/([^/]+))?(?:\/(\d+))?/);
+    if (match) return { user: match[1], post: match[2], index: match[3] ? parseInt(match[3], 10) - 1 : undefined };
+  }
+  return null;
+}
+
+blueskyRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) {
+    const p = extractBlueskyParams(url);
+    if (p) {
+      if (p.post) return handlePostEmbed(c, p.user, p.post, p.index ?? -1);
+      return handleProfileEmbed(c, p.user);
+    }
+  }
+  return new Response("Not found", { status: 404 });
+});
+
+blueskyRouter.get("/*", c => {
+  const { path } = c.req;
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) {
+    const p = extractBlueskyParams(httpMatch[1]);
+    if (p) {
+      if (p.post) return handlePostEmbed(c, p.user, p.post, p.index ?? -1);
+      return handleProfileEmbed(c, p.user);
+    }
+  }
+  return new Response("Not found", { status: 404 });
+});

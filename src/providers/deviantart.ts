@@ -37,15 +37,22 @@ async function fetchDAInfo(url: string): Promise<DAoEmbed | null> {
   } catch { return null; }
 }
 
-async function handleDAEmbed(c: Context, path: string): Promise<Response> {
-  const originalUrl = `https://www.deviantart.com${path}`;
+async function handleDAEmbed(c: Context, originalUrl: string): Promise<Response> {
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
   const ua = c.req.header("user-agent");
-  if (!isBot(ua)) return c.redirect(originalUrl, 302);
+  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
 
   const info = await fetchDAInfo(originalUrl);
   if (!info) return c.redirect(originalUrl, 302);
 
   const host = getOrigin(c);
+
+  if (isDirect) {
+    return c.redirect(info.fullsize_url ?? info.url ?? info.thumbnail_url ?? originalUrl, 302);
+  }
+
   const oembedUrl = `${host}/deviantart/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.author_name)}&url=${encodeURIComponent(originalUrl)}`;
 
   return c.html(buildEmbedHtml({
@@ -67,4 +74,36 @@ deviantartRouter.get("/oembed", c => {
   return c.json(buildOEmbed({ type: "photo", title: q.title, author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / DeviantArt" }));
 });
 
-deviantartRouter.get("/*", c => handleDAEmbed(c, c.req.path.replace("/deviantart", "")));
+function extractDAUrl(urlStr: string): string | null {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("deviantart.com")) return urlStr;
+  } catch {
+    const match = urlStr.match(/(https?:\/\/(?:www\.)?deviantart\.com\/[^\s]+)/);
+    if (match) return match[1];
+    if (urlStr.startsWith("/")) return `https://www.deviantart.com${urlStr}`;
+  }
+  return null;
+}
+
+deviantartRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) {
+    const p = extractDAUrl(url);
+    if (p) return handleDAEmbed(c, p);
+  }
+  return new Response("Not found", { status: 404 });
+});
+
+deviantartRouter.get("/*", c => {
+  const path = c.req.path.replace("/deviantart", "").replace("/da", "");
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) {
+    const p = extractDAUrl(httpMatch[1]);
+    if (p) return handleDAEmbed(c, p);
+  }
+  if (path && path !== "/") {
+    return handleDAEmbed(c, `https://www.deviantart.com${path}`);
+  }
+  return new Response("Not found", { status: 404 });
+});

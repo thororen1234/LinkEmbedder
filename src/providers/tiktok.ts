@@ -9,21 +9,21 @@ const TIKTOK_DOWNLOAD_UA = "Mozilla/5.0 (compatible; LinkEmbedder/1.0)";
 const TIKTOK_COLOR = "#010101";
 
 interface TikTokAuthor { nickname?: string; uniqueId?: string; avatarThumb?: string; }
-interface TikTokBitrateInfo { PlayAddr?: { UrlList?: string[]; DataSize?: string }; CodecType?: string; }
+interface TikTokBitrateInfo { PlayAddr?: { UrlList?: string[]; DataSize?: string; }; CodecType?: string; }
 interface TikTokVideo {
   width?: number;
   height?: number;
   duration?: number;
-  cover?: string | { urlList?: string[] };
-  playAddr?: string | { urlList?: string[] };
-  playAddrStruct?: { urlList?: string[] };
-  PlayAddrStruct?: { UrlList?: string[] };
+  cover?: string | { urlList?: string[]; };
+  playAddr?: string | { urlList?: string[]; };
+  playAddrStruct?: { urlList?: string[]; };
+  PlayAddrStruct?: { UrlList?: string[]; };
   bitrateInfo?: TikTokBitrateInfo[];
 }
 interface TikTokStats { diggCount?: number; commentCount?: number; playCount?: number; }
 interface TikTokItem {
   id?: string; desc?: string; author?: TikTokAuthor; video?: TikTokVideo;
-  imagePost?: { images?: Array<{ imageURL?: { urlList?: string[] } }> };
+  imagePost?: { images?: Array<{ imageURL?: { urlList?: string[]; }; }>; };
   stats?: TikTokStats; isContentClassified?: boolean;
 }
 
@@ -330,9 +330,17 @@ tiktokRouter.get("/@:user/live", async c => {
 });
 
 async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): Promise<Response> {
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
+  const imgIndexParam = c.req.query("img_index") ?? c.req.query("index");
+  if (imgIndexParam !== undefined && embedIndex === -1) {
+    embedIndex = parseInt(imgIndexParam, 10) - 1;
+  }
+
   const ua = c.req.header("user-agent");
   const tiktokUrl = `https://www.tiktok.com/@i/video/${awemeId}`;
-  if (!isBot(ua)) return c.redirect(tiktokUrl, 302);
+  if (!isBot(ua) && !isDirect) return c.redirect(tiktokUrl, 302);
 
   const item = await fetchVideoData(awemeId);
   if (!item) return c.redirect(tiktokUrl, 302);
@@ -348,6 +356,14 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
   const postUrl = `https://www.tiktok.com/@${username}/video/${awemeId}`;
   const host = getOrigin(c);
   const isVideo = !item.imagePost?.images?.length;
+  const playUrl = findPlayUrl(item.video);
+
+  if (isDirect) {
+    if (isVideo && playUrl) return c.redirect(`${host}/tiktok/play/${awemeId}/video.mp4`, 302);
+    if (item.imagePost?.images?.length) return c.redirect(`${host}/tiktok/images/${awemeId}/${Math.max(1, embedIndex + 1)}`, 302);
+    return c.redirect(postUrl, 302);
+  }
+
   const oembedUrl = `${host}/tiktok/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(postUrl)}&type=${isVideo ? "video" : "link"}`;
 
   if (item.imagePost?.images?.length) {
@@ -363,7 +379,6 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
   }
 
   const hasCover = !!(item.video?.cover ?? item.author?.avatarThumb);
-  const playUrl = findPlayUrl(item.video);
   const videoUrl = playUrl ? `${host}/tiktok/play/${awemeId}/video.mp4` : postUrl;
 
   return c.html(buildEmbedHtml({
@@ -380,3 +395,39 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
     oembedUrl
   }));
 }
+
+async function handleUrlParam(c: Context, urlStr: string) {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("tiktok.com")) {
+      const match = url.pathname.match(/\/@([^/]+)\/(?:video|photo)\/(\d+)/);
+      if (match) return handleVideoEmbed(c, match[2]);
+
+      const shortMatch = url.pathname.match(/^\/([A-Za-z0-9_-]+)/);
+      if (shortMatch && (url.hostname.includes("vm.tiktok.com") || url.hostname.includes("vt.tiktok.com"))) {
+        const resolved = await resolveShortLink(shortMatch[1]);
+        if (resolved) {
+          const resMatch = resolved.pathname.match(/\/@([^/]+)\/(?:video|photo)\/(\d+)/);
+          if (resMatch) return handleVideoEmbed(c, resMatch[2]);
+        }
+      }
+    }
+  } catch {
+    const match = urlStr.match(/\/@([^/]+)\/(?:video|photo)\/(\d+)/);
+    if (match) return handleVideoEmbed(c, match[2]);
+  }
+  return new Response("Not found", { status: 404 });
+}
+
+tiktokRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) return handleUrlParam(c, url);
+  return new Response("Not found", { status: 404 });
+});
+
+tiktokRouter.get("/*", c => {
+  const { path } = c.req;
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) return handleUrlParam(c, httpMatch[1]);
+  return new Response("Not found", { status: 404 });
+});

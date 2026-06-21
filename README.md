@@ -1,6 +1,6 @@
 # LinkEmbedder
 
-One server, seven embed fixers. Stop running a separate FxTwitter bot, FxReddit bot, and FxTikTok bot side by side - LinkEmbedder merges them into a single TypeScript/Hono service so links from Twitter/X, Instagram, Reddit, TikTok, Bluesky, Pixiv, and Tumblr all render properly on Discord, Telegram, Slack, and friends.
+One server, fifteen embed fixers. Stop running a separate FxTwitter bot, FxReddit bot, and FxTikTok bot side by side - LinkEmbedder merges them into a single TypeScript/Hono service so links from Twitter/X, Instagram, Reddit, TikTok, Bluesky, Pixiv, Tumblr, DeviantArt, FurAffinity, Twitch, Bilibili, Facebook, Iwara, PTT, and Threads all render properly on Discord, Telegram, Slack, and friends.
 
 Drop a LinkEmbedder URL in chat and:
 
@@ -31,22 +31,40 @@ Every platform also has a documented set of accepted path formats (galleries, sp
 
 ## Platform Reference
 
+### Universal URL & Direct Media Redirects
+
+All supported platforms now include universal routes. You can pass the original URL as a query parameter or append it directly to the path:
+
+- **Query Parameter:** `https://your-host/twitter?url=https://twitter.com/user/status/123`
+- **Path Prefix:** `https://your-host/twitter/https://twitter.com/user/status/123`
+
+You can also use the `?d=1`, `?dir=1`, or `?direct=1` parameters to bypass the HTML embed completely and redirect straight to the raw media (image or video file) if available:
+
+- `https://your-host/twitter?url=https://twitter.com/user/status/123&d=1`
+
+### Image Index Selection
+
+For posts containing multiple images (e.g. a Twitter thread with 4 photos, an Instagram carousel, a Bluesky post, or a Reddit gallery), you can pass `?img_index=X` or `?index=X` (1-based) to specify exactly which image you want:
+
+- **In an embed:** Bypasses generating a grid layout and instead embeds only the specified image. `https://your-host/twitter/user/status/123?img_index=2`
+- **With direct redirect (`?d=1`):** Redirects straight to the raw image file at the specified index. `https://your-host/ig/p/123?d=1&img_index=3`
+
 | Platform | Path prefix | Auth needed? | How it fetches data |
 |---|---|---|---|
 | Twitter / X | `/twitter/`, `/x/` | None | Public syndication API |
 | Instagram | `/ig/`, `/insta/`, `/instagram/` | None | Embed page + GQL scraping |
 | Reddit | `/reddit/`, `/r/` | None | Public JSON API |
 | TikTok | `/tiktok/`, `/tk/` | None | Page scraping |
-| Bluesky | `/bsky/` | None | Public AT Protocol API |
-| Pixiv | `/pixiv/` | Cookie, R-18 only | Page scraping |
-| Tumblr | `/tumblr/` | Free API key | Official API |
+| Bluesky | `/bluesky/`, `/bsky/` | None | Public AT Protocol API |
+| Pixiv | `/pixiv/`, `/pix/` | Cookie, R-18 only | Page scraping |
+| Tumblr | `/tumblr/`, `/tmb/` | Free API key | Official API |
 | DeviantArt | `/deviantart/`, `/da/` | Cookie, R-18 only | Official oEmbed API |
 | FurAffinity | `/furaffinity/`, `/fa/` | Cookie, R-18 only | Page scraping |
-| Twitch | `/twitch/` | Client ID / Secret | Public GQL API |
-| Bilibili | `/bilibili/` | None | Public JSON API |
+| Twitch | `/twitch/`, `/tw/` | Client ID / Secret | Public GQL API |
+| Bilibili | `/bilibili/`, `/bili/` | None | Public JSON API |
 | Facebook | `/facebook/`, `/fb/` | None | Third-party Downloader API |
-| Iwara | `/iwara/` | None | Public JSON API |
-| PTT | `/ptt/` | None | Page scraping |
+| Iwara | `/iwara/`, `/iwa/` | None | Public JSON API |
+| PTT | `/ptt/`, `/pt/` | None | Page scraping |
 | Threads | `/threads/`, `/thread/` | None | Internal GQL API |
 
 <details>
@@ -123,7 +141,9 @@ Every platform also has a documented set of accepted path formats (galleries, sp
   ],
   "twitch": [
     "/twitch/clip/:id",
-    "/twitch/:streamer/clip/:id"
+    "/twitch/:streamer/clip/:id",
+    "/twitch?url=https://twitch.tv/:streamer/clip/:id",
+    "/twitch/https://twitch.tv/:streamer/clip/:id"
   ],
   "bilibili": [
     "/bilibili/:bvid"

@@ -10,7 +10,7 @@ const TUMBLR_COLOR = "#35465C";
 interface TumblrMedia { url?: string; type?: string; width?: number; height?: number; }
 interface TumblrFormatting { start: number; end: number; type: string; url?: string; }
 interface TumblrBlock { type: string; text?: string; formatting?: TumblrFormatting[]; media?: TumblrMedia[]; url?: string; poster?: TumblrMedia[]; }
-interface TumblrPost { id_string: string; blog_name: string; summary?: string; content?: TumblrBlock[]; trail?: Array<{ content?: TumblrBlock[] }>; shortUrl?: string; }
+interface TumblrPost { id_string: string; blog_name: string; summary?: string; content?: TumblrBlock[]; trail?: Array<{ content?: TumblrBlock[]; }>; shortUrl?: string; }
 
 async function fetchPost(blog: string, postId: string): Promise<TumblrPost | null> {
   const cacheKey = `${blog}:${postId}`;
@@ -24,7 +24,7 @@ async function fetchPost(blog: string, postId: string): Promise<TumblrPost | nul
     try {
       const res = await fetch(`https://api.tumblr.com/v2/blog/${blog}/posts/${postId}?npf=true&api_key=${encodeURIComponent(apiKey)}`, { headers: { Accept: "application/json" } });
       if (res.ok) {
-        const json = await res.json() as { meta: { status: number }; response?: { posts?: TumblrPost[] } };
+        const json = await res.json() as { meta: { status: number; }; response?: { posts?: TumblrPost[]; }; };
         post = json.response?.posts?.[0];
       }
     } catch { }
@@ -67,8 +67,8 @@ function getAllBlocks(post: TumblrPost): TumblrBlock[] {
   return [...(post.content ?? []), ...(post.trail ?? []).flatMap(t => t.content ?? [])];
 }
 
-function getImages(blocks: TumblrBlock[]): Array<{ url: string; width?: number; height?: number }> {
-  const imgs: Array<{ url: string; width?: number; height?: number }> = [];
+function getImages(blocks: TumblrBlock[]): Array<{ url: string; width?: number; height?: number; }> {
+  const imgs: Array<{ url: string; width?: number; height?: number; }> = [];
   for (const b of blocks) {
     if (b.type === "image" && b.media?.length) {
       const best = b.media.reduce((a, c) => ((c.width ?? 0) > (a.width ?? 0) ? c : a));
@@ -78,7 +78,7 @@ function getImages(blocks: TumblrBlock[]): Array<{ url: string; width?: number; 
   return imgs;
 }
 
-function getFirstVideo(blocks: TumblrBlock[]): { url: string; width?: number; height?: number; poster?: string } | null {
+function getFirstVideo(blocks: TumblrBlock[]): { url: string; width?: number; height?: number; poster?: string; } | null {
   for (const b of blocks) {
     if (b.type === "video" && b.media) {
       for (const m of b.media) {
@@ -100,9 +100,15 @@ function parseTextBlocks(blocks: TumblrBlock[]): string {
 }
 
 async function handleEmbed(c: Context, blog: string, postId: string): Promise<Response> {
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
+  const imgIndexParam = c.req.query("img_index") ?? c.req.query("index");
+  const embedIndex = imgIndexParam ? parseInt(imgIndexParam, 10) - 1 : -1;
+
   const ua = c.req.header("user-agent");
   const originalUrl = `https://www.tumblr.com/${blog}/${postId}`;
-  if (!isBot(ua)) return c.redirect(originalUrl, 302);
+  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
 
   const post = await fetchPost(blog, postId);
   if (!post) return c.redirect(originalUrl, 302);
@@ -114,17 +120,28 @@ async function handleEmbed(c: Context, blog: string, postId: string): Promise<Re
   const video = getFirstVideo(blocks);
   const oembedUrl = `${host}/tumblr/oembed?blog=${encodeURIComponent(post.blog_name)}&url=${encodeURIComponent(postUrl)}&type=${video ? "video" : "link"}`;
 
+  if (isDirect) {
+    if (video) return c.redirect(video.url, 302);
+    const images = getImages(blocks);
+    if (images.length) {
+      const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, images.length - 1));
+      return c.redirect(images[idx].url, 302);
+    }
+    return c.redirect(originalUrl, 302);
+  }
+
   const textContent = parseTextBlocks(blocks);
   const description = post.summary && post.summary !== textContent ? `${post.summary}\n\n${textContent}` : textContent;
 
   if (video) return c.html(buildEmbedHtml({ title, description, url: postUrl, proxyUrl: c.req.url, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, imageUrl: video.poster, color: TUMBLR_COLOR, siteName: "Tumblr", twitterCard: "player", oembedUrl }));
 
   const images = getImages(blocks);
-  if (images.length > 1) {
+  if (images.length > 1 && embedIndex < 0) {
     const imageUrl = `${host}/tumblr/grid/${blog}/${postId}`;
     return c.html(buildEmbedHtml({ title, description, url: postUrl, proxyUrl: c.req.url, imageUrl, color: TUMBLR_COLOR, siteName: "Tumblr", largeImage: true, oembedUrl }));
-  } else if (images.length === 1) {
-    const image = images[0];
+  } else if (images.length > 0) {
+    const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, images.length - 1));
+    const image = images[idx];
     return c.html(buildEmbedHtml({ title, description, url: postUrl, proxyUrl: c.req.url, imageUrl: image.url, imageWidth: image.width, imageHeight: image.height, color: TUMBLR_COLOR, siteName: "Tumblr", largeImage: true, oembedUrl }));
   }
 
@@ -155,3 +172,48 @@ tumblrRouter.get("/:blog/:id", c => handleEmbed(c, c.req.param("blog"), c.req.pa
 tumblrRouter.get("/:blog/:id/:slug", c => handleEmbed(c, c.req.param("blog"), c.req.param("id")));
 tumblrRouter.get("/:blog/post/:id", c => handleEmbed(c, c.req.param("blog"), c.req.param("id")));
 tumblrRouter.get("/:blog/post/:id/:slug", c => handleEmbed(c, c.req.param("blog"), c.req.param("id")));
+
+function extractTumblrParams(urlStr: string): { blog: string; id: string; } | null {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("tumblr.com")) {
+      const hostnameParts = url.hostname.split(".");
+      if (hostnameParts.length >= 3 && hostnameParts[0] !== "www") {
+        const match = url.pathname.match(/\/(?:post\/)?(\d+)/);
+        if (match) return { blog: hostnameParts[0], id: match[1] };
+      } else {
+        const match = url.pathname.match(/\/([^/]+)(?:\/post)?\/(\d+)/);
+        if (match) return { blog: match[1], id: match[2] };
+      }
+    } else {
+      const match = url.pathname.match(/\/(?:post\/)?(\d+)/);
+      if (match) return { blog: url.hostname, id: match[1] };
+    }
+  } catch {
+    const subMatch = urlStr.match(/(?:https?:\/\/)?([^./]+)\.tumblr\.com\/(?:post\/)?(\d+)/);
+    if (subMatch && subMatch[1] !== "www") return { blog: subMatch[1], id: subMatch[2] };
+
+    const match = urlStr.match(/\/([^/]+)(?:\/post)?\/(\d+)/);
+    if (match && match[1] !== "post") return { blog: match[1], id: match[2] };
+  }
+  return null;
+}
+
+tumblrRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) {
+    const p = extractTumblrParams(url);
+    if (p) return handleEmbed(c, p.blog, p.id);
+  }
+  return new Response("Not found", { status: 404 });
+});
+
+tumblrRouter.get("/*", c => {
+  const { path } = c.req;
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) {
+    const p = extractTumblrParams(httpMatch[1]);
+    if (p) return handleEmbed(c, p.blog, p.id);
+  }
+  return new Response("Not found", { status: 404 });
+});

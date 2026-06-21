@@ -24,7 +24,7 @@ async function fetchTwitchAccessToken(): Promise<string | null> {
   try {
     const res = await fetch(`https://id.twitch.tv/oauth2/token?client_id=${clientId}&client_secret=${clientSecret}&grant_type=client_credentials`, { method: "POST" });
     if (!res.ok) return null;
-    const data = await res.json() as { access_token: string };
+    const data = await res.json() as { access_token: string; };
     twitchAccessToken = data.access_token;
     return twitchAccessToken;
   } catch { return null; }
@@ -88,11 +88,19 @@ async function fetchClipInfo(clipId: string): Promise<TwitchClipInfo | null> {
 
 async function handleClip(c: Context, clipId: string): Promise<Response> {
   const originalUrl = `https://clips.twitch.tv/${clipId}`;
+
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
   const ua = c.req.header("user-agent");
-  if (!isBot(ua)) return c.redirect(originalUrl, 302);
+  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
 
   const info = await fetchClipInfo(clipId);
   if (!info) return c.redirect(originalUrl, 302);
+
+  if (isDirect) {
+    return c.redirect(info.video_url, 302);
+  }
 
   const host = getOrigin(c);
   const oembedUrl = `${host}/twitch/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.streamer)}&url=${encodeURIComponent(originalUrl)}`;
@@ -122,3 +130,36 @@ twitchRouter.get("/oembed", c => {
 twitchRouter.get("/clip/:id", c => handleClip(c, c.req.param("id")));
 twitchRouter.get("/:streamer/clip/:id", c => handleClip(c, c.req.param("id")));
 twitchRouter.get("/:id", c => handleClip(c, c.req.param("id")));
+
+function extractClipId(urlStr: string): string | null {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("clips.twitch.tv")) {
+      return url.pathname.replace(/^\//, "");
+    } else if (url.hostname.includes("twitch.tv") && url.pathname.includes("/clip/")) {
+      return url.pathname.split("/clip/")[1].split("?")[0].replace(/\/$/, "");
+    }
+  } catch {
+    if (/^[A-Za-z0-9_-]+$/.test(urlStr)) return urlStr;
+  }
+  return null;
+}
+
+twitchRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) {
+    const clipId = extractClipId(url);
+    if (clipId) return handleClip(c, clipId);
+  }
+  return new Response("Not found", { status: 404 });
+});
+
+twitchRouter.get("/*", c => {
+  const { path } = c.req;
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) {
+    const clipId = extractClipId(httpMatch[1]);
+    if (clipId) return handleClip(c, clipId);
+  }
+  return new Response("Not found", { status: 404 });
+});

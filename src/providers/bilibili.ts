@@ -64,7 +64,7 @@ function signWbiParams(params: Record<string, string | number>, mixinKey: string
 
 interface BilibiliVideoInfo {
   bvid: string; cid: number; title: string; desc: string; pic: string;
-  owner: { name: string }; stat: { view: number; like: number; coin: number; favorite: number; };
+  owner: { name: string; }; stat: { view: number; like: number; coin: number; favorite: number; };
   dimension?: { width: number; height: number; };
 }
 
@@ -138,9 +138,12 @@ bilibiliRouter.get("/play/:bvid/:cid/video.mp4", async c => {
 });
 
 async function handleEmbed(c: Context, bvid: string): Promise<Response> {
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
   const originalUrl = `https://www.bilibili.com/video/${bvid}`;
   const ua = c.req.header("user-agent");
-  if (!isBot(ua)) return c.redirect(originalUrl, 302);
+  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
 
   const info = await fetchVideoInfo(bvid);
   if (!info) return c.redirect(originalUrl, 302);
@@ -149,6 +152,11 @@ async function handleEmbed(c: Context, bvid: string): Promise<Response> {
   const oembedUrl = `${host}/bilibili/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.owner.name)}&url=${encodeURIComponent(originalUrl)}`;
 
   const videoUrl = `${host}/bilibili/play/${info.bvid}/${info.cid}/video.mp4`;
+
+  if (isDirect) {
+    return c.redirect(videoUrl, 302);
+  }
+
   const description = (info.desc ?? "").slice(0, 500);
 
   return c.html(buildEmbedHtml({
@@ -168,3 +176,36 @@ async function handleEmbed(c: Context, bvid: string): Promise<Response> {
 
 bilibiliRouter.get("/video/:bvid", c => handleEmbed(c, c.req.param("bvid").split("?")[0]));
 bilibiliRouter.get("/:bvid", c => handleEmbed(c, c.req.param("bvid").split("?")[0]));
+
+function extractBilibiliParams(urlStr: string): string | null {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("bilibili.com")) {
+      const match = url.pathname.match(/\/video\/([^/]+)/);
+      if (match) return match[1];
+    }
+  } catch {
+    const match = urlStr.match(/\/video\/([^/]+)/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+bilibiliRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) {
+    const p = extractBilibiliParams(url);
+    if (p) return handleEmbed(c, p);
+  }
+  return new Response("Not found", { status: 404 });
+});
+
+bilibiliRouter.get("/*", c => {
+  const { path } = c.req;
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) {
+    const p = extractBilibiliParams(httpMatch[1]);
+    if (p) return handleEmbed(c, p);
+  }
+  return new Response("Not found", { status: 404 });
+});

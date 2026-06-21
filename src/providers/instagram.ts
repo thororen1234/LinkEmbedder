@@ -346,21 +346,31 @@ instagramRouter.get("/grid/:id", async c => {
   });
 });
 
-async function handleEmbed(c: Context): Promise<Response> {
+async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: string): Promise<Response> {
   const ua = c.req.header("user-agent");
-  const postId = c.req.param("id") || c.req.path.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/)?.[1];
+  const postId = manualId || c.req.param("id") || c.req.path.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/)?.[1];
   if (!postId) return c.redirect("https://www.instagram.com/", 302);
 
   const originalUrl = `https://www.instagram.com/p/${postId}/`;
-  if (!isBot(ua)) return c.redirect(originalUrl, 302);
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
+  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
 
   const data = await getInstaData(postId);
   if (!data?.medias?.length) return c.redirect(originalUrl, 302);
 
   const host = getOrigin(c);
-  const idx = Math.max(0, (parseInt(c.req.param("mediaNum") || c.req.query("img_index") || "1") - 1));
+  const imgIndexParam = manualMediaNum || c.req.param("mediaNum") || c.req.query("img_index") || c.req.query("index");
+  const isGrid = data.medias.length > 1 && !imgIndexParam;
+  const idx = Math.max(0, (parseInt(imgIndexParam || "1") - 1));
   const media = data.medias[Math.min(idx, data.medias.length - 1)];
   const isVideo = media.typeName.includes("Video");
+
+  if (isDirect) {
+    if (isVideo) return c.redirect(`${host}/ig/videos/${postId}/${idx + 1}/video.mp4`, 302);
+    return c.redirect(`${host}/ig/images/${postId}/${idx + 1}`, 302);
+  }
 
   const description = data.caption.slice(0, 280) + (data.caption.length > 280 ? "…" : "");
   const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(`@${data.username}`)}&url=${encodeURIComponent(originalUrl)}&type=${isVideo ? "video" : "link"}`;
@@ -381,7 +391,7 @@ async function handleEmbed(c: Context): Promise<Response> {
     }));
   }
 
-  if (data.medias.length > 1) {
+  if (isGrid) {
     return c.html(buildEmbedHtml({
       description,
       url: originalUrl,
@@ -420,5 +430,38 @@ for (const pattern of [
   "/:username/p/:id", "/:username/p/:id/:mediaNum",
   "/:username/reel/:id"
 ]) {
-  instagramRouter.get(pattern, handleEmbed);
+  instagramRouter.get(pattern, c => handleEmbed(c));
 }
+
+function extractInstaParams(urlStr: string): { id: string; mediaNum?: string; } | null {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("instagram.com")) {
+      const match = url.pathname.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+      if (match) return { id: match[1], mediaNum: url.searchParams.get("img_index") ?? undefined };
+    }
+  } catch {
+    const match = urlStr.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+    if (match) return { id: match[1] };
+  }
+  return null;
+}
+
+instagramRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) {
+    const p = extractInstaParams(url);
+    if (p) return handleEmbed(c, p.id, p.mediaNum);
+  }
+  return new Response("Not found", { status: 404 });
+});
+
+instagramRouter.get("/*", c => {
+  const { path } = c.req;
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) {
+    const p = extractInstaParams(httpMatch[1]);
+    if (p) return handleEmbed(c, p.id, p.mediaNum);
+  }
+  return new Response("Not found", { status: 404 });
+});

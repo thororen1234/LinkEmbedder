@@ -11,15 +11,15 @@ interface RedditPost {
   subreddit: string; title: string; author: string; permalink: string;
   selftext?: string; post_hint?: string; url?: string; domain?: string;
   is_reddit_media_domain?: boolean;
-  media?: { reddit_video?: { fallback_url: string; width: number; height: number; has_audio?: boolean } };
-  secure_media?: { reddit_video?: { fallback_url: string; width: number; height: number; has_audio?: boolean } };
-  preview?: { images?: Array<{ source?: { url: string; width: number; height: number } }> };
-  gallery_data?: { items: Array<{ media_id: string; caption?: string }> };
-  media_metadata?: Record<string, { s?: { u: string; x: number; y: number } }>;
+  media?: { reddit_video?: { fallback_url: string; width: number; height: number; has_audio?: boolean; }; };
+  secure_media?: { reddit_video?: { fallback_url: string; width: number; height: number; has_audio?: boolean; }; };
+  preview?: { images?: Array<{ source?: { url: string; width: number; height: number; }; }>; };
+  gallery_data?: { items: Array<{ media_id: string; caption?: string; }>; };
+  media_metadata?: Record<string, { s?: { u: string; x: number; y: number; }; }>;
   crosspost_parent_list?: RedditPost[];
   thumbnail?: string; thumbnail_width?: number; thumbnail_height?: number;
   poll_data?: {
-    options?: Array<{ text: string; vote_count?: number }>;
+    options?: Array<{ text: string; vote_count?: number; }>;
     total_vote_count?: number;
   };
 }
@@ -33,7 +33,7 @@ async function fetchRedditPost(permalink: string): Promise<RedditPost | null> {
     });
     if (!res.ok) return null;
     const json = await res.json() as unknown[];
-    const post = (json[0] as { data: { children: Array<{ data: RedditPost }> } })?.data?.children?.[0]?.data;
+    const post = (json[0] as { data: { children: Array<{ data: RedditPost; }>; }; })?.data?.children?.[0]?.data;
     if (!post) return null;
     redditCache.set(permalink, post);
     return post;
@@ -69,8 +69,11 @@ function getGalleryImages(post: RedditPost) {
 
 async function handlePost(permalink: string, c: Context): Promise<Response> {
   const originalUrl = `https://www.reddit.com${permalink}`;
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
   const ua = c.req.header("user-agent");
-  if (!isBot(ua)) return c.redirect(originalUrl, 302);
+  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
 
   const post = await fetchRedditPost(permalink);
   if (!post) return c.redirect(originalUrl, 302);
@@ -84,6 +87,21 @@ async function handlePost(permalink: string, c: Context): Promise<Response> {
   const isVideo = vid || effective.post_hint === "hosted:video";
   const oembedUrl = `${host}/reddit/oembed?title=${encodeURIComponent(post.title)}&url=${encodeURIComponent(originalUrl)}&type=${isVideo ? "video" : "link"}`;
 
+  const imgIndexParam = c.req.query("img_index") ?? c.req.query("index");
+  const embedIndex = imgIndexParam ? parseInt(imgIndexParam, 10) - 1 : -1;
+
+  if (isDirect) {
+    if (isVideo) return c.redirect(`${host}/reddit/video${permalink}`, 302);
+    const gallery = getGalleryImages(effective);
+    if (gallery.length > 0) {
+      const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, gallery.length - 1));
+      return c.redirect(gallery[idx].url, 302);
+    }
+    const preview = getPreviewImage(effective);
+    if (preview) return c.redirect(preview.url, 302);
+    return c.redirect(originalUrl, 302);
+  }
+
   if (isVideo) {
     const thumb = getPreviewImage(effective);
     const videoRoute = `${host}/reddit/video${permalink}`;
@@ -92,7 +110,8 @@ async function handlePost(permalink: string, c: Context): Promise<Response> {
 
   const gallery = getGalleryImages(effective);
   if (gallery.length > 1) {
-    const first = gallery[0];
+    const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, gallery.length - 1));
+    const first = gallery[idx];
     return c.html(buildEmbedHtml({ title: authorLabel, description: post.title + "\n\n" + fullDesc, url: originalUrl, imageUrl: first.url, imageWidth: first.width, imageHeight: first.height, color: REDDIT_COLOR, siteName: "Reddit", largeImage: true, oembedUrl }));
   }
 
@@ -165,4 +184,35 @@ redditRouter.get("/:id", c => {
   const id = c.req.param("id");
   if (id.includes(".")) return c.redirect(`https://www.reddit.com/${id}`, 302);
   return handlePost(`/${id}`, c);
+});
+
+function extractRedditParams(urlStr: string): string | null {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("reddit.com") || url.hostname.includes("redd.it")) {
+      return url.pathname;
+    }
+  } catch {
+    if (urlStr.startsWith("/r/") || urlStr.startsWith("/user/") || urlStr.startsWith("/u/") || urlStr.startsWith("/comments/") || urlStr.startsWith("/gallery/")) return urlStr;
+  }
+  return null;
+}
+
+redditRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) {
+    const p = extractRedditParams(url);
+    if (p) return handlePost(p, c);
+  }
+  return new Response("Not found", { status: 404 });
+});
+
+redditRouter.get("/*", c => {
+  const { path } = c.req;
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) {
+    const p = extractRedditParams(httpMatch[1]);
+    if (p) return handlePost(p, c);
+  }
+  return new Response("Not found", { status: 404 });
 });

@@ -57,14 +57,22 @@ async function fetchFASubmission(id: string): Promise<FAInfo | null> {
 }
 
 async function handleFA(c: Context, id: string): Promise<Response> {
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
   const originalUrl = `https://www.furaffinity.net/view/${id}/`;
   const ua = c.req.header("user-agent");
-  if (!isBot(ua)) return c.redirect(originalUrl, 302);
+  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
 
   const info = await fetchFASubmission(id);
   if (!info) return c.redirect(originalUrl, 302);
 
   const host = getOrigin(c);
+
+  if (isDirect) {
+    return c.redirect(info.imageUrl ?? originalUrl, 302);
+  }
+
   const oembedUrl = `${host}/furaffinity/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.artistName)}&url=${encodeURIComponent(originalUrl)}`;
 
   return c.html(buildEmbedHtml({
@@ -88,3 +96,36 @@ furaffinityRouter.get("/oembed", c => {
 
 furaffinityRouter.get("/view/:id", c => handleFA(c, c.req.param("id")));
 furaffinityRouter.get("/view/:id/*", c => handleFA(c, c.req.param("id")));
+
+function extractFAParams(urlStr: string): string | null {
+  try {
+    const url = new URL(urlStr);
+    if (url.hostname.includes("furaffinity.net")) {
+      const match = url.pathname.match(/\/view\/(\d+)/);
+      if (match) return match[1];
+    }
+  } catch {
+    const match = urlStr.match(/\/view\/(\d+)/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+furaffinityRouter.get("/", c => {
+  const url = c.req.query("url");
+  if (url) {
+    const p = extractFAParams(url);
+    if (p) return handleFA(c, p);
+  }
+  return new Response("Not found", { status: 404 });
+});
+
+furaffinityRouter.get("/*", c => {
+  const { path } = c.req;
+  const httpMatch = path.match(/(https?:\/\/[^\s]+)/);
+  if (httpMatch) {
+    const p = extractFAParams(httpMatch[1]);
+    if (p) return handleFA(c, p);
+  }
+  return new Response("Not found", { status: 404 });
+});
