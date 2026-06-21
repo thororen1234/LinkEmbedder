@@ -96,33 +96,35 @@ async function proxyImage(url: string, c: Context): Promise<Response> {
   } catch { return c.redirect(url, 302); }
 }
 
-async function fetchVideoWithRetry(playAddrUrl: string, range?: string): Promise<Response | null> {
-  for (let i = 0; i < VIDEO_USER_AGENTS.length; i++) {
+async function fetchVideoWithRetry(playAddrUrl: string): Promise<Response | null> {
+  for (let attempt = 0; attempt < VIDEO_USER_AGENTS.length; attempt++) {
     const headers: Record<string, string> = {
-      "User-Agent": VIDEO_USER_AGENTS[i],
+      "User-Agent": VIDEO_USER_AGENTS[attempt],
       Referer: "https://www.tiktok.com/",
       Accept: "*/*",
-      "Accept-Encoding": "identity",
+      "Accept-Encoding": "gzip, deflate, br",
+      "sec-fetch-site": "cross-site",
     };
-    if (range) headers.Range = range;
 
     try {
-      const videoRes = await fetch(playAddrUrl, {
+      const res = await fetch(playAddrUrl, {
         headers,
         redirect: "manual"
       });
 
-      if (videoRes.status === 301 || videoRes.status === 302) {
-        const location = videoRes.headers.get("location");
+      if (res.status === 301 || res.status === 302) {
+        const location = res.headers.get("location");
         if (location) return new Response(null, { status: 302, headers: { Location: location } });
       }
 
-      if (videoRes.ok || videoRes.status === 206) {
-        return videoRes;
+      if (res.ok || res.status === 206) {
+        return res;
       }
-    } catch { }
+    } catch (e) {
+      console.error(`Video fetch attempt ${attempt} failed:`, e);
+    }
 
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 400));
   }
   return null;
 }
@@ -213,22 +215,21 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
   }
 
   const range = c.req.header("range");
-  const upstreamRes = await fetchVideoWithRetry(playAddrUrl, range);
+  const videoRes = await fetchVideoWithRetry(playAddrUrl);
 
-  if (!upstreamRes) {
-    console.log(`All video proxy attempts failed for ${awemeId}`);
+  if (!videoRes) {
+    console.log(`TikTok video proxy failed for ${awemeId}`);
     return c.redirect(playAddrUrl, 302);
   }
 
   const proxyHeaders = new Headers();
   ["Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"].forEach(h => {
-    if (upstreamRes.headers.has(h)) proxyHeaders.set(h, upstreamRes.headers.get(h)!);
+    if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
   });
-
   if (!proxyHeaders.has("Accept-Ranges")) proxyHeaders.set("Accept-Ranges", "bytes");
 
-  return new Response(upstreamRes.body, {
-    status: upstreamRes.status,
+  return new Response(videoRes.body, {
+    status: videoRes.status,
     headers: proxyHeaders
   });
 });

@@ -209,6 +209,7 @@ async function fetchVideoWithRetry(url: string) {
 instagramRouter.get("/videos/:id/:n/video.mp4", async c => {
   const id = c.req.param("id");
   instagramCache.delete(id);
+
   const data = await getInstaData(id);
   if (!data) return c.redirect(`https://www.instagram.com/p/${id}/`, 302);
 
@@ -216,18 +217,20 @@ instagramRouter.get("/videos/:id/:n/video.mp4", async c => {
   const mediaUrl = data.medias[Math.max(0, n)]?.url;
   if (!mediaUrl) return c.redirect(`https://www.instagram.com/p/${id}/`, 302);
 
-  const range = c.req.header("range");
   const videoRes = await fetchVideoWithRetry(mediaUrl);
 
-  if (!videoRes) return c.redirect(mediaUrl, 302);
+  if (!videoRes) {
+    console.log(`Instagram video proxy failed for ${id}`);
+    return c.redirect(mediaUrl, 302);
+  }
 
-  const headers = new Headers();
+  const proxyHeaders = new Headers();
   ["Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"].forEach(h => {
-    if (videoRes.headers.has(h)) headers.set(h, videoRes.headers.get(h)!);
+    if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
   });
-  if (!headers.has("Accept-Ranges")) headers.set("Accept-Ranges", "bytes");
+  if (!proxyHeaders.has("Accept-Ranges")) proxyHeaders.set("Accept-Ranges", "bytes");
 
-  return new Response(videoRes.body, { status: videoRes.status, headers });
+  return new Response(videoRes.body, { status: videoRes.status, headers: proxyHeaders });
 });
 
 instagramRouter.get("/grid/:id", async c => {
