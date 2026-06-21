@@ -124,23 +124,18 @@ tiktokRouter.get('/play/:videoId/video.mp4', async (c) => {
 
   const range = c.req.header('Range');
   const headers: Record<string, string> = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
     'Accept': '*/*'
   };
   if (range) headers['Range'] = range;
 
   try {
-    const videoRes = await fetch(playAddrUrl, { headers, redirect: 'manual' });
-
-    if (videoRes.status === 302 || videoRes.status === 301) {
-      return c.redirect(videoRes.headers.get('Location') || playAddrUrl, 302);
-    } else {
-      const proxyHeaders = new Headers();
-      ['Content-Type', 'Content-Length', 'Accept-Ranges', 'Content-Range'].forEach(h => {
-        if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
-      });
-      return new Response(videoRes.body, { status: videoRes.status, headers: proxyHeaders });
-    }
+    const videoRes = await fetch(playAddrUrl, { headers, redirect: 'follow' });
+    const proxyHeaders = new Headers();
+    ['Content-Type', 'Content-Length', 'Accept-Ranges', 'Content-Range'].forEach(h => {
+      if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
+    });
+    return new Response(videoRes.body, { status: videoRes.status, headers: proxyHeaders });
   } catch {
     return c.redirect(playAddrUrl, 302);
   }
