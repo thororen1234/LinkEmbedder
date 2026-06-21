@@ -37,51 +37,93 @@ const app = new Hono();
 app.use(trimTrailingSlash());
 
 app.get("/", c =>
-  c.html(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>LinkEmbedder</title>
-<style>
-  body{font-family:system-ui,sans-serif;max-width:680px;margin:2rem auto;padding:0 1rem;color:#eee;background:#111;}
-  h1{color:#7c6af7;}
-  table{width:100%;border-collapse:collapse;margin-top:1rem;}
-  th,td{padding:.4rem .7rem;border:1px solid #333;text-align:left;}
-  th{background:#1a1a2e;}
-  code{background:#222;padding:.1rem .3rem;border-radius:4px;font-size:.9em;}
-  a{color:#7c6af7;}
-</style>
-</head>
-<body>
-<h1>🔗 LinkEmbedder</h1>
-<p>Unified social media embed-fix server. Send a bot request to any of these prefixes:</p>
-<table>
-  <thead><tr><th>Prefix</th><th>Platform</th><th>Example</th></tr></thead>
-  <tbody>
-    <tr><td><code>/twitter/</code> or <code>/x/</code></td><td>Twitter / X</td><td><code>/twitter/:user/status/:id</code></td></tr>
-    <tr><td><code>/ig/</code></td><td>Instagram</td><td><code>/ig/p/:id</code></td></tr>
-    <tr><td><code>/reddit/</code> or <code>/r/</code></td><td>Reddit</td><td><code>/reddit/r/:sub/comments/:id</code></td></tr>
-    <tr><td><code>/tiktok/</code></td><td>TikTok</td><td><code>/tiktok/@user/video/:id</code></td></tr>
-    <tr><td><code>/bsky/</code></td><td>Bluesky</td><td><code>/bsky/profile/:user/post/:id</code></td></tr>
-    <tr><td><code>/pixiv/</code></td><td>Pixiv</td><td><code>/pixiv/artworks/:id</code></td></tr>
-    <tr><td><code>/tumblr/</code></td><td>Tumblr</td><td><code>/tumblr/:blog/:id</code></td></tr>
-    <tr><td><code>/twitch/</code></td><td>Twitch</td><td><code>/twitch/clip/:id</code></td></tr>
-    <tr><td><code>/bilibili/</code></td><td>Bilibili</td><td><code>/bilibili/:bvid</code></td></tr>
-    <tr><td><code>/facebook/</code></td><td>Facebook</td><td><code>/facebook/reel/:id</code></td></tr>
-    <tr><td><code>/furaffinity/</code></td><td>FurAffinity</td><td><code>/furaffinity/view/:id</code></td></tr>
-    <tr><td><code>/deviantart/</code></td><td>DeviantArt</td><td><code>/deviantart/art/:id</code></td></tr>
-    <tr><td><code>/iwara/</code></td><td>Iwara</td><td><code>/iwara/video/:id</code></td></tr>
-    <tr><td><code>/ptt/</code></td><td>PTT</td><td><code>/ptt/bbs/:board/:id</code></td></tr>
-    <tr><td><code>/threads/</code></td><td>Threads</td><td><code>/threads/@user/post/:id</code></td></tr>
-  </tbody>
-</table>
-<p style="margin-top:2rem;color:#888;font-size:.85em;">
-  Non-bot requests are redirected to the original platform. 
-  Bot detection is based on User-Agent matching.
-</p>
-</body>
-</html>`)
+  c.json({
+    twitter: [
+      "/twitter/:user/status/:id",
+      "/twitter/:user/status/:id/:mediaIndex",
+      "/twitter/i/status/:id",
+      "/x/:user/status/:id",
+      "/x/:user/status/:id/:mediaIndex",
+      "/x/i/status/:id"
+    ],
+    instagram: [
+      "/ig/p/:id",
+      "/ig/p/:id/:mediaNum",
+      "/ig/reel/:id",
+      "/ig/:username/p/:id",
+      "/insta/p/:id",
+      "/insta/p/:id/:mediaNum",
+      "/insta/reel/:id",
+      "/insta/:username/p/:id",
+      "/instagram/p/:id",
+      "/instagram/p/:id/:mediaNum",
+      "/instagram/reel/:id",
+      "/instagram/:username/p/:id"
+    ],
+    reddit: [
+      "/reddit/r/:subreddit/comments/:id/:slug?",
+      "/reddit/r/:sub/s/:shareId",
+      "/reddit/gallery/:id",
+      "/r/:subreddit/comments/:id"
+    ],
+    tiktok: [
+      "/tiktok/:shortId",
+      "/tiktok/@:user/video/:id",
+      "/tiktok/@:user/photo/:id",
+      "/tiktok/@:user/live",
+      "/tk/:shortId",
+      "/tk/@:user/video/:id",
+      "/tk/@:user/photo/:id",
+      "/tk/@:user/live"
+    ],
+    bluesky: [
+      "/bsky/profile/:user/post/:id",
+      "/bsky/profile/:user",
+      "/bsky/https://bsky.app/profile/:user/post/:id"
+    ],
+    pixiv: [
+      "/pixiv/artworks/:id",
+      "/pixiv/artworks/:id/:imageIndex",
+      "/pixiv/:lang/artworks/:id",
+      "/pixiv/i/:id",
+      "/pixiv/member_illust.php?illust_id=:id",
+      "/pixiv/i/*"
+    ],
+    tumblr: [
+      "/tumblr/:blog/:id",
+      "/tumblr/:blog/:id/:slug"
+    ],
+    deviantart: [
+      "/deviantart/*",
+      "/da/*"
+    ],
+    furaffinity: [
+      "/furaffinity/view/:id",
+      "/furaffinity/view/:id/*",
+      "/fa/view/:id",
+      "/fa/view/:id/*"
+    ],
+    twitch: [
+      "/twitch/clip/:id"
+    ],
+    bilibili: [
+      "/bilibili/:bvid"
+    ],
+    facebook: [
+      "/facebook/reel/:id",
+      "/fb/reel/:id"
+    ],
+    iwara: [
+      "/iwara/video/:id"
+    ],
+    ptt: [
+      "/ptt/bbs/:board/:id"
+    ],
+    threads: [
+      "/threads/@user/post/:id",
+      "/thread/@user/post/:id"
+    ]
+  })
 );
 
 app.get("/health", c => c.json({ status: "ok", timestamp: new Date().toISOString() }));
@@ -100,11 +142,15 @@ app.route("/tumblr", tumblrRouter);
 app.route("/twitch", twitchRouter);
 app.route("/bilibili", bilibiliRouter);
 app.route("/facebook", facebookRouter);
+app.route("/fb", facebookRouter);
 app.route("/furaffinity", furaffinityRouter);
+app.route("/fa", furaffinityRouter);
 app.route("/deviantart", deviantartRouter);
+app.route("/da", deviantartRouter);
 app.route("/iwara", iwaraRouter);
 app.route("/ptt", pttRouter);
 app.route("/threads", threadsRouter);
+app.route("/thread", threadsRouter);
 app.all("*", c =>
   c.json({ error: "Not found. Check / for available routes." }, 404)
 );

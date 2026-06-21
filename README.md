@@ -34,77 +34,112 @@ Every platform also has a documented set of accepted path formats (galleries, sp
 | Platform | Path prefix | Auth needed? | How it fetches data |
 |---|---|---|---|
 | Twitter / X | `/twitter/`, `/x/` | None | Public syndication API |
-| Instagram | `/ig/` | None | Embed page + GQL scraping |
+| Instagram | `/ig/`, `/insta/`, `/instagram/` | None | Embed page + GQL scraping |
 | Reddit | `/reddit/`, `/r/` | None | Public JSON API |
-| TikTok | `/tiktok/` | None | Page scraping |
+| TikTok | `/tiktok/`, `/tk/` | None | Page scraping |
 | Bluesky | `/bsky/` | None | Public AT Protocol API |
 | Pixiv | `/pixiv/` | Cookie, R-18 only | Page scraping |
 | Tumblr | `/tumblr/` | Free API key | Official API |
+| DeviantArt | `/deviantart/`, `/da/` | Cookie, R-18 only | Official oEmbed API |
+| FurAffinity | `/furaffinity/`, `/fa/` | Cookie, R-18 only | Page scraping |
+| Twitch | `/twitch/` | Client ID / Secret | Public GQL API |
+| Bilibili | `/bilibili/` | None | Public JSON API |
+| Facebook | `/facebook/`, `/fb/` | None | Third-party Downloader API |
+| Iwara | `/iwara/` | None | Public JSON API |
+| PTT | `/ptt/` | None | Page scraping |
+| Threads | `/threads/`, `/thread/` | None | Internal GQL API |
 
 <details>
 <summary>Accepted URL formats per platform</summary>
 
-**Twitter / X**
-
-```
-/twitter/:user/status/:id
-/twitter/:user/status/:id/:mediaIndex
-/twitter/i/status/:id
-/x/:user/status/:id
-```
-
-**Instagram**
-
-```
-/ig/p/:id
-/ig/p/:id/:mediaNum
-/ig/reel/:id
-/ig/:username/p/:id
-```
-
-**Reddit**
-
-```
-/reddit/r/:subreddit/comments/:id/:slug?
-/reddit/r/:sub/s/:shareId
-/reddit/gallery/:id
-/r/:subreddit/comments/:id
-```
-
-**TikTok**
-
-```
-/tiktok/:shortId
-/tiktok/@:user/video/:id
-/tiktok/@:user/photo/:id
-/tiktok/@:user/live
-```
-
-**Bluesky**
-
-```
-/bsky/profile/:user/post/:id
-/bsky/profile/:user
-/bsky/https://bsky.app/profile/:user/post/:id
-```
-
-**Pixiv**
-
-```
-/pixiv/artworks/:id
-/pixiv/artworks/:id/:imageIndex
-/pixiv/:lang/artworks/:id
-/pixiv/i/:id
-/pixiv/member_illust.php?illust_id=:id
-```
-
-Image proxy (required for the Pixiv CDN): `/pixiv/i/*`
-
-**Tumblr**
-
-```
-/tumblr/:blog/:id
-/tumblr/:blog/:id/:slug
+```json
+{
+  "twitter": [
+    "/twitter/:user/status/:id",
+    "/twitter/:user/status/:id/:mediaIndex",
+    "/twitter/i/status/:id",
+    "/x/:user/status/:id",
+    "/x/:user/status/:id/:mediaIndex",
+    "/x/i/status/:id"
+  ],
+  "instagram": [
+    "/ig/p/:id",
+    "/ig/p/:id/:mediaNum",
+    "/ig/reel/:id",
+    "/ig/:username/p/:id",
+    "/insta/p/:id",
+    "/insta/p/:id/:mediaNum",
+    "/insta/reel/:id",
+    "/insta/:username/p/:id",
+    "/instagram/p/:id",
+    "/instagram/p/:id/:mediaNum",
+    "/instagram/reel/:id",
+    "/instagram/:username/p/:id"
+  ],
+  "reddit": [
+    "/reddit/r/:subreddit/comments/:id/:slug?",
+    "/reddit/r/:sub/s/:shareId",
+    "/reddit/gallery/:id",
+    "/r/:subreddit/comments/:id"
+  ],
+  "tiktok": [
+    "/tiktok/:shortId",
+    "/tiktok/@:user/video/:id",
+    "/tiktok/@:user/photo/:id",
+    "/tiktok/@:user/live",
+    "/tk/:shortId",
+    "/tk/@:user/video/:id",
+    "/tk/@:user/photo/:id",
+    "/tk/@:user/live"
+  ],
+  "bluesky": [
+    "/bsky/profile/:user/post/:id",
+    "/bsky/profile/:user",
+    "/bsky/https://bsky.app/profile/:user/post/:id"
+  ],
+  "pixiv": [
+    "/pixiv/artworks/:id",
+    "/pixiv/artworks/:id/:imageIndex",
+    "/pixiv/:lang/artworks/:id",
+    "/pixiv/i/:id",
+    "/pixiv/member_illust.php?illust_id=:id",
+    "/pixiv/i/*"
+  ],
+  "tumblr": [
+    "/tumblr/:blog/:id",
+    "/tumblr/:blog/:id/:slug"
+  ],
+  "deviantart": [
+    "/deviantart/*",
+    "/da/*"
+  ],
+  "furaffinity": [
+    "/furaffinity/view/:id",
+    "/furaffinity/view/:id/*",
+    "/fa/view/:id",
+    "/fa/view/:id/*"
+  ],
+  "twitch": [
+    "/twitch/clip/:id"
+  ],
+  "bilibili": [
+    "/bilibili/:bvid"
+  ],
+  "facebook": [
+    "/facebook/reel/:id",
+    "/fb/reel/:id"
+  ],
+  "iwara": [
+    "/iwara/video/:id"
+  ],
+  "ptt": [
+    "/ptt/bbs/:board/:id"
+  ],
+  "threads": [
+    "/threads/@user/post/:id",
+    "/thread/@user/post/:id"
+  ]
+}
 ```
 
 </details>
@@ -114,8 +149,13 @@ Image proxy (required for the Pixiv CDN): `/pixiv/i/*`
 | Variable | Required? | Description |
 |---|---|---|
 | `PORT` | No | Port to listen on (default `3000`) |
-| `TUMBLR_API_KEY` | For Tumblr | Free app key from [tumblr.com/oauth/apps](https://www.tumblr.com/oauth/apps) |
+| `TUMBLR_API_KEY` | For Tumblr | [tumblr.com](https://www.tumblr.com/oauth/apps) |
+| `TWITCH_CLIENT_ID` | For Twitch | [dev.twitch.tv](https://dev.twitch.tv/docs/authentication/register-app) |
+| `TWITCH_CLIENT_SECRET` | For Twitch | [dev.twitch.tv](https://dev.twitch.tv/docs/authentication/register-app) |
 | `PIXIV_COOKIE` | For R-18 Pixiv | `PHPSESSID` from a logged-in Pixiv session. Comma-separated for rotation. |
+| `DA_COOKIE` | For R-18 DeviantArt | JSON string of cookies (e.g. `{"auth":"...","userinfo":"..."}`). |
+| `FA_COOKIE_A` | For R-18 FurAffinity | The `a` cookie from a logged-in session. |
+| `FA_COOKIE_B` | For R-18 FurAffinity | The `b` cookie from a logged-in session. |
 
 ## Caching
 
@@ -146,5 +186,5 @@ LinkEmbedder wouldn't exist without the platform-specific fixers it's built on:
 - [fixdeviantart](https://github.com/Tschrock/fixdeviantart)
 - [fxiwara](https://github.com/seriaati/fxiwara)
 - [fxptt](https://github.com/seriaati/fxptt)
-- [embed-fixer](https://github.com/seriaati/embed-fixer)
 - [fixthreads](https://github.com/milanmdev/fixthreads)
+- [embed-fixer](https://github.com/seriaati/embed-fixer)
