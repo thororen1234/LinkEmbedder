@@ -98,7 +98,7 @@ async function handlePostEmbed(c: Context, user: string, postId: string, embedIn
     if (images.length) return c.redirect(images[Math.max(0, embedIndex >= 0 ? Math.min(embedIndex, images.length - 1) : 0)].fullsize, 302);
   }
 
-  if (video) return c.html(buildEmbedHtml({ description, url: originalUrl, videoUrl: video.url, videoWidth: video.width ?? 1080, videoHeight: video.height ?? 1080, imageUrl: video.thumb, color: BSKY_COLOR, siteName: "Bluesky", twitterCard: "player", oembedUrl }));
+  if (video) return c.html(buildEmbedHtml({ title: description, url: originalUrl, videoUrl: video.url, videoWidth: video.width ?? 1080, videoHeight: video.height ?? 1080, imageUrl: video.thumb, color: BSKY_COLOR, siteName: "Bluesky", twitterCard: "player", oembedUrl }));
 
   const images = getImages(post.embed);
   if (images.length) {
