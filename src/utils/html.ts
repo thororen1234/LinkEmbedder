@@ -117,7 +117,7 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
 
   if (oembedUrl) {
     metas.push(
-      `<link rel="alternate" type="application/json+oembed" href="${esc(oembedUrl)}" title="${esc(title)}" />`
+      `<link rel="alternate" type="application/json+oembed" href="${esc(oembedUrl)}" title="${esc(title ?? '')}" />`
     );
   }
 
