@@ -7,7 +7,7 @@ import { tiktokCache } from '../utils/cache.js';
 const TIKTOK_COLOR = '#010101';
 
 interface TikTokAuthor { nickname?: string; uniqueId?: string; avatarThumb?: string; }
-interface TikTokVideo { width?: number; height?: number; duration?: number; cover?: string | { urlList?: string[] }; playAddr?: string | { urlList?: string[] }; playAddrStruct?: { urlList?: string[] }; PlayAddrStruct?: { UrlList?: string[] }; }
+interface TikTokVideo { width?: number; height?: number; duration?: number; cover?: string | { urlList?: string[] }; playAddr?: string | { urlList?: string[] }; playAddrStruct?: { urlList?: string[] }; PlayAddrStruct?: { UrlList?: string[] }; bitrateInfo?: Array<{ PlayAddr?: { UrlList?: string[] } }>; }
 interface TikTokStats { diggCount?: number; commentCount?: number; playCount?: number; }
 interface TikTokItem {
   id?: string; desc?: string; author?: TikTokAuthor; video?: TikTokVideo;
@@ -102,7 +102,7 @@ async function handleVideoEmbed(c: Context, awemeId: string): Promise<Response> 
   const coverUrl = typeof coverObj === 'string' ? coverObj : coverObj?.urlList?.[0];
 
   const playAddrObj = (item.video?.playAddr ?? item.video?.playAddrStruct ?? item.video?.PlayAddrStruct) as any;
-  const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : (playAddrObj?.urlList?.[0] ?? playAddrObj?.UrlList?.[0]);
+  const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : (playAddrObj?.urlList?.[0] ?? playAddrObj?.UrlList?.[0] ?? item.video?.bitrateInfo?.[0]?.PlayAddr?.UrlList?.[0]);
   const videoUrl = playAddrUrl ? `${host}/tiktok/play/${awemeId}/video.mp4` : postUrl;
 
   return c.html(buildEmbedHtml({ description, url: postUrl, videoUrl, videoWidth: item.video?.width ?? 1080, videoHeight: item.video?.height ?? 1920, imageUrl: coverUrl ?? item.author?.avatarThumb, color: TIKTOK_COLOR, siteName: 'TikTok', twitterCard: 'player', oembedUrl }));
@@ -119,22 +119,27 @@ tiktokRouter.get('/play/:videoId/video.mp4', async (c) => {
   const awemeId = c.req.param('videoId');
   const item = await fetchVideoData(awemeId);
   const playAddrObj = (item?.video?.playAddr ?? item?.video?.playAddrStruct ?? item?.video?.PlayAddrStruct) as any;
-  const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : (playAddrObj?.urlList?.[0] ?? playAddrObj?.UrlList?.[0]);
+  const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : (playAddrObj?.urlList?.[0] ?? playAddrObj?.UrlList?.[0] ?? item?.video?.bitrateInfo?.[0]?.PlayAddr?.UrlList?.[0]);
   if (!playAddrUrl) return c.redirect(`https://www.tiktok.com/@i/video/${awemeId}`, 302);
 
+  const range = c.req.header('Range');
+  const headers: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+    'Accept': '*/*'
+  };
+  if (range) headers['Range'] = range;
+
   try {
-    const videoRes = await fetch(playAddrUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
-        Accept: '*/*'
-      },
-      redirect: 'manual'
-    });
+    const videoRes = await fetch(playAddrUrl, { headers, redirect: 'manual' });
 
     if (videoRes.status === 302 || videoRes.status === 301) {
       return c.redirect(videoRes.headers.get('Location') || playAddrUrl, 302);
     } else {
-      return videoRes;
+      const proxyHeaders = new Headers();
+      ['Content-Type', 'Content-Length', 'Accept-Ranges', 'Content-Range'].forEach(h => {
+        if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
+      });
+      return new Response(videoRes.body, { status: videoRes.status, headers: proxyHeaders });
     }
   } catch {
     return c.redirect(playAddrUrl, 302);
