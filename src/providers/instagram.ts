@@ -88,7 +88,7 @@ export const instagramRouter = new Hono();
 
 instagramRouter.get('/oembed', (c) => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: 'link', author_name: q.user, author_url: q.url, provider_name: 'LinkEmbeder / Instagram' }));
+  return c.json(buildOEmbed({ type: 'link', author_name: q.user, author_url: q.url, provider_name: 'LinkEmbedder / Instagram' }));
 });
 
 instagramRouter.get('/images/:id/:n', async (c) => {

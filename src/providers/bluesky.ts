@@ -111,7 +111,7 @@ export const blueskyRouter = new Hono();
 
 blueskyRouter.get('/oembed', (c) => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: 'link', author_name: q.author, author_url: q.url, provider_name: 'LinkEmbeder / Bluesky' }));
+  return c.json(buildOEmbed({ type: 'link', author_name: q.author, author_url: q.url, provider_name: 'LinkEmbedder / Bluesky' }));
 });
 
 blueskyRouter.get('/profile/:user/post/:post', (c) => handlePostEmbed(c, c.req.param('user'), c.req.param('post')));

@@ -97,7 +97,7 @@ export const pixivRouter = new Hono();
 
 pixivRouter.get('/oembed', (c) => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: 'photo', author_name: q.author, author_url: q.url, provider_name: 'LinkEmbeder / Pixiv' }));
+  return c.json(buildOEmbed({ type: 'photo', author_name: q.author, author_url: q.url, provider_name: 'LinkEmbedder / Pixiv' }));
 });
 
 pixivRouter.get('/i/*', async (c) => {

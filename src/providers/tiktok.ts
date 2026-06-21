@@ -105,7 +105,7 @@ export const tiktokRouter = new Hono();
 
 tiktokRouter.get('/oembed', (c) => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: 'video', author_name: q.author, author_url: q.url, provider_name: 'LinkEmbeder / TikTok' }));
+  return c.json(buildOEmbed({ type: 'video', author_name: q.author, author_url: q.url, provider_name: 'LinkEmbedder / TikTok' }));
 });
 
 tiktokRouter.get('/:videoId', async (c) => {

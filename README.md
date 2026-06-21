@@ -1,8 +1,8 @@
-# LinkEmbeder
+# LinkEmbedder
 
-One server, seven embed fixers. Stop running a separate FxTwitter bot, FxReddit bot, and FxTikTok bot side by side - LinkEmbeder merges them into a single TypeScript/Hono service so links from Twitter/X, Instagram, Reddit, TikTok, Bluesky, Pixiv, and Tumblr all render properly on Discord, Telegram, Slack, and friends.
+One server, seven embed fixers. Stop running a separate FxTwitter bot, FxReddit bot, and FxTikTok bot side by side - LinkEmbedder merges them into a single TypeScript/Hono service so links from Twitter/X, Instagram, Reddit, TikTok, Bluesky, Pixiv, and Tumblr all render properly on Discord, Telegram, Slack, and friends.
 
-Drop a LinkEmbeder URL in chat and:
+Drop a LinkEmbedder URL in chat and:
 
 - **Bots/crawlers** (Discord, Telegram, Slack, WhatsApp, Mastodon, etc.) get back an OpenGraph/Twitter Card response, so the embed actually shows the image, video, or post text.
 - **Humans** get a 302 redirect straight to the original post.
@@ -19,7 +19,7 @@ pnpm dev
 
 ## Usage
 
-Take any supported link and swap the domain for wherever you're hosting LinkEmbeder - the path stays the same. A couple of examples:
+Take any supported link and swap the domain for wherever you're hosting LinkEmbedder - the path stays the same. A couple of examples:
 
 ```
 https://twitter.com/user/status/123 -> https://your-host/twitter/user/status/123
@@ -130,7 +130,7 @@ pnpm start
 
 ## Credit
 
-LinkEmbeder wouldn't exist without the platform-specific fixers it's built on:
+LinkEmbedder wouldn't exist without the platform-specific fixers it's built on:
 
 - [VixBluesky](https://github.com/Lexedia/VixBluesky)
 - [InstaFix](https://github.com/Wikidepia/InstaFix)

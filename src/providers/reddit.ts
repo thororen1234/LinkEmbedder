@@ -24,7 +24,7 @@ async function fetchRedditPost(permalink: string): Promise<RedditPost | null> {
   if (cached) return cached;
   try {
     const res = await fetch(`https://www.reddit.com${permalink}.json?limit=1&raw_json=1`, {
-      headers: { 'User-Agent': 'LinkEmbeder/1.0', Accept: 'application/json' },
+      headers: { 'User-Agent': 'LinkEmbedder/1.0', Accept: 'application/json' },
     });
     if (!res.ok) return null;
     const json = await res.json() as unknown[];
@@ -37,7 +37,7 @@ async function fetchRedditPost(permalink: string): Promise<RedditPost | null> {
 
 async function resolveShareLink(sub: string, shareId: string): Promise<string | null> {
   try {
-    const res = await fetch(`https://www.reddit.com/r/${sub}/s/${shareId}`, { redirect: 'manual', headers: { 'User-Agent': 'LinkEmbeder/1.0' } });
+    const res = await fetch(`https://www.reddit.com/r/${sub}/s/${shareId}`, { redirect: 'manual', headers: { 'User-Agent': 'LinkEmbedder/1.0' } });
     return res.headers.get('location');
   } catch { return null; }
 }
@@ -106,7 +106,7 @@ export const redditRouter = new Hono();
 
 redditRouter.get('/oembed', (c) => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: 'link', author_name: q.title, author_url: q.url, provider_name: 'LinkEmbeder / Reddit' }));
+  return c.json(buildOEmbed({ type: 'link', author_name: q.title, author_url: q.url, provider_name: 'LinkEmbedder / Reddit' }));
 });
 
 redditRouter.get('/r/:sub/comments/:id{[^/]+}', (c) => handlePost(`/r/${c.req.param('sub')}/comments/${c.req.param('id')}`, c));

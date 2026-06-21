@@ -80,7 +80,7 @@ export const tumblrRouter = new Hono();
 
 tumblrRouter.get('/oembed', (c) => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: 'link', author_name: q.blog, author_url: q.url, provider_name: 'LinkEmbeder / Tumblr' }));
+  return c.json(buildOEmbed({ type: 'link', author_name: q.blog, author_url: q.url, provider_name: 'LinkEmbedder / Tumblr' }));
 });
 
 tumblrRouter.get('/:blog/:id', (c) => handleEmbed(c, c.req.param('blog'), c.req.param('id')));

@@ -34,7 +34,7 @@ app.get('/', (c) =>
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>LinkEmbeder</title>
+<title>LinkEmbedder</title>
 <style>
   body{font-family:system-ui,sans-serif;max-width:680px;margin:2rem auto;padding:0 1rem;color:#eee;background:#111;}
   h1{color:#7c6af7;}
@@ -46,7 +46,7 @@ app.get('/', (c) =>
 </style>
 </head>
 <body>
-<h1>🔗 LinkEmbeder</h1>
+<h1>🔗 LinkEmbedder</h1>
 <p>Unified social media embed-fix server. Send a bot request to any of these prefixes:</p>
 <table>
   <thead><tr><th>Prefix</th><th>Platform</th><th>Example</th></tr></thead>

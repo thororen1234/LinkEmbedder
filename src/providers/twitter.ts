@@ -111,7 +111,7 @@ export const twitterRouter = new Hono();
 
 twitterRouter.get('/oembed', (c) => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: (q.ttype as 'link' | 'photo' | 'video') ?? 'link', author_name: q.user, author_url: q.link, provider_name: q.provider ?? 'LinkEmbeder / Twitter' }));
+  return c.json(buildOEmbed({ type: (q.ttype as 'link' | 'photo' | 'video') ?? 'link', author_name: q.user, author_url: q.link, provider_name: q.provider ?? 'LinkEmbedder / Twitter' }));
 });
 
 twitterRouter.get('/:user/status/:id', (c) =>

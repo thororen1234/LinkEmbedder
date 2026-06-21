@@ -60,7 +60,7 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
     videoHeight,
     oembedUrl,
     color = '#5865F2',
-    siteName = 'LinkEmbeder',
+    siteName = 'LinkEmbedder',
     twitterCard,
     largeImage = false,
   } = opts;
