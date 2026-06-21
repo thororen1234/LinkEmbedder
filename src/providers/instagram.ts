@@ -368,7 +368,7 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
   const isVideo = media.typeName.includes("Video");
 
   if (isDirect) {
-    if (isVideo) return c.redirect(`${host}/ig/videos/${postId}/${idx + 1}/video.mp4`, 302);
+    if (isVideo) return c.redirect(`https://instafix.thororen.com/videos/${postId}/${idx + 1}`, 302);
     return c.redirect(`${host}/ig/images/${postId}/${idx + 1}`, 302);
   }
 
@@ -380,7 +380,7 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
       description,
       url: originalUrl,
       proxyUrl: c.req.url,
-      videoUrl: `${host}/ig/videos/${postId}/${idx + 1}/video.mp4`,
+      videoUrl: `https://instafix.thororen.com/videos/${postId}/${idx + 1}`,
       videoWidth: 1080,
       videoHeight: 1920,
       imageUrl: `${host}/ig/thumb/${postId}/${idx + 1}`,

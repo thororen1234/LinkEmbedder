@@ -107,7 +107,7 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const host = getOrigin(c);
   const video = getBestVideo(tweet);
 
-  if (video && video.url.includes("video.twimg.com") && video.url.includes(".mp4")) {
+  if (video && video.url && video.url.includes("video.twimg.com") && video.url.includes(".mp4")) {
     try {
       const urlObj = new URL(video.url);
       const cleanPath = urlObj.pathname.replace(".mp4", "");

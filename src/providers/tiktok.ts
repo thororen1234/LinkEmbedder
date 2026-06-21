@@ -359,7 +359,7 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
   const playUrl = findPlayUrl(item.video);
 
   if (isDirect) {
-    if (isVideo && playUrl) return c.redirect(`${host}/tiktok/play/${awemeId}/video.mp4`, 302);
+    if (isVideo && playUrl) return c.redirect(`https://fxtiktok.thororen.com/generate/video/${awemeId}.mp4`, 302);
     if (item.imagePost?.images?.length) return c.redirect(`${host}/tiktok/images/${awemeId}/${Math.max(1, embedIndex + 1)}`, 302);
     return c.redirect(postUrl, 302);
   }
@@ -379,7 +379,7 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
   }
 
   const hasCover = !!(item.video?.cover ?? item.author?.avatarThumb);
-  const videoUrl = playUrl ? `${host}/tiktok/play/${awemeId}/video.mp4` : postUrl;
+  const videoUrl = playUrl ? `https://fxtiktok.thororen.com/generate/video/${awemeId}.mp4` : postUrl;
 
   return c.html(buildEmbedHtml({
     description,
