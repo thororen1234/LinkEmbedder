@@ -87,11 +87,11 @@ async function handlePostEmbed(c: Context, user: string, postId: string, embedIn
   const displayName = post.author.displayName ?? post.author.handle;
   const authorName = `${displayName} (@${post.author.handle})`;
   const text = post.record?.text ?? "";
-  const host = getOrigin(c);
-  const oembedUrl = `${host}/bsky/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}`;
   const description = text;
-
+  const host = getOrigin(c);
   const video = getVideo(post.embed, post.author.did);
+  const oembedUrl = `${host}/bsky/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}&ttype=${video ? "video" : "link"}`;
+
   if (isDirect) {
     if (video) return c.redirect(video.url, 302);
     const images = getImages(post.embed);
@@ -133,7 +133,7 @@ export const blueskyRouter = new Hono();
 
 blueskyRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "link", author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / Bluesky" }));
+  return c.json(buildOEmbed({ type: (q.ttype as any) || "link", author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / Bluesky" }));
 });
 
 blueskyRouter.get("/grid/:user/:post", async c => {

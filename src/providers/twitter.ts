@@ -107,7 +107,7 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const host = getOrigin(c);
   const video = getBestVideo(tweet);
 
-  if (video && video.url.includes("video.twimg.com") && video.url.includes(".mp4")) {
+  if (video && video.url && video.url.includes("video.twimg.com") && video.url.includes(".mp4")) {
     try {
       const urlObj = new URL(video.url);
       const cleanPath = urlObj.pathname.replace(".mp4", "");
@@ -124,7 +124,7 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const oembedUrl = `${host}/twitter/oembed?desc=${encodeURIComponent(text)}&user=${encodeURIComponent(authorName)}&link=${encodeURIComponent(tweetUrl)}&ttype=${video ? "video" : "link"}`;
 
   if (video) {
-    return c.html(buildEmbedHtml({ description: text, url: tweetUrl, imageUrl: video.thumb, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, color: TWITTER_COLOR, siteName: "Twitter / X", twitterCard: "player", oembedUrl }));
+    return c.redirect(`https://fxtwitter.com/${username}/status/${tweetId}`, 302);
   }
 
   const photos = getPhotos(tweet);
