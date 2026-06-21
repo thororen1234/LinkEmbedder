@@ -221,6 +221,12 @@ app.route("/ptt", pttRouter);
 app.route("/pt", pttRouter);
 app.route("/threads", threadsRouter);
 app.route("/thread", threadsRouter);
+
+app.get("/tvid/*", c => {
+  const path = c.req.path.replace("/tvid/", "");
+  return c.redirect(`https://video.twimg.com/${path}.mp4`, 302);
+});
+
 app.all("*", c =>
   c.json({ error: "Not found. Check / for available routes." }, 404)
 );

@@ -97,7 +97,8 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const tweet = await fetchTweet(tweetId);
   if (!tweet) return c.redirect(fallbackUrl, 302);
 
-  const text = tweet.full_text ?? tweet.text ?? "";
+  let text = tweet.full_text ?? tweet.text ?? "";
+  text = text.replace(/(?:\s*https:\/\/t\.co\/\w+)+$/g, "");
 
   const username = tweet.user?.screen_name ?? routeUser ?? "unknown";
   const displayName = tweet.user?.name ?? username;
@@ -105,6 +106,14 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const authorName = `${displayName} (@${username})`;
   const host = getOrigin(c);
   const video = getBestVideo(tweet);
+
+  if (video && video.url.includes("video.twimg.com") && video.url.includes(".mp4")) {
+    try {
+      const urlObj = new URL(video.url);
+      const cleanPath = urlObj.pathname.replace(".mp4", "");
+      video.url = `${host}/tvid${cleanPath}`;
+    } catch { }
+  }
 
   if (isDirect) {
     if (video) return c.redirect(video.url, 302);
