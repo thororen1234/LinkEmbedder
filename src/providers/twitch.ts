@@ -1,10 +1,10 @@
-import { Hono } from 'hono';
-import type { Context } from 'hono';
-import { isBot } from '../utils/bot.js';
-import { buildEmbedHtml, buildOEmbed } from '../utils/html.js';
-import { twitchCache } from '../utils/cache.js';
+import { Context, Hono } from "hono";
 
-const TWITCH_COLOR = '#9146FF';
+import { isBot } from "../utils/bot.js";
+import { twitchCache } from "../utils/cache.js";
+import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
+
+const TWITCH_COLOR = "#9146FF";
 
 interface TwitchClipInfo {
   title: string;
@@ -13,7 +13,7 @@ interface TwitchClipInfo {
   video_url: string;
 }
 
-let twitchAccessToken = '';
+let twitchAccessToken = "";
 
 async function fetchTwitchAccessToken(): Promise<string | null> {
   if (twitchAccessToken) return twitchAccessToken;
@@ -22,7 +22,7 @@ async function fetchTwitchAccessToken(): Promise<string | null> {
   if (!clientId || !clientSecret) return null;
 
   try {
-    const res = await fetch(`https://id.twitch.tv/oauth2/token?client_id=${clientId}&client_secret=${clientSecret}&grant_type=client_credentials`, { method: 'POST' });
+    const res = await fetch(`https://id.twitch.tv/oauth2/token?client_id=${clientId}&client_secret=${clientSecret}&grant_type=client_credentials`, { method: "POST" });
     if (!res.ok) return null;
     const data = await res.json() as { access_token: string };
     twitchAccessToken = data.access_token;
@@ -36,41 +36,41 @@ async function fetchClipInfo(clipId: string): Promise<TwitchClipInfo | null> {
 
   const accessToken = await fetchTwitchAccessToken();
   if (!accessToken) {
-    console.warn('[twitch] Missing TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET');
+    console.warn("[twitch] Missing TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET");
     return null;
   }
 
   try {
-    const res = await fetch('https://gql.twitch.tv/gql', {
-      method: 'POST',
+    const res = await fetch("https://gql.twitch.tv/gql", {
+      method: "POST",
       headers: {
-        'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko',
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
+        "Client-ID": "kimne78kx3ncx6brgo4mv6wki5h1ko",
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
       },
       body: JSON.stringify([
         {
-          operationName: 'VideoPlayerStreamInfoOverlayClip',
+          operationName: "VideoPlayerStreamInfoOverlayClip",
           variables: { slug: clipId },
-          extensions: { persistedQuery: { version: 1, sha256Hash: 'fcefd8b2081e39d16cbdc94bc82142df01b143bb296f0043262c44c37dbd1f63' } }
+          extensions: { persistedQuery: { version: 1, sha256Hash: "fcefd8b2081e39d16cbdc94bc82142df01b143bb296f0043262c44c37dbd1f63" } }
         },
         {
-          operationName: 'VideoAccessToken_Clip',
-          variables: { platform: 'web', slug: clipId },
-          extensions: { persistedQuery: { version: 1, sha256Hash: '6fd3af2b22989506269b9ac02dd87eb4a6688392d67d94e41a6886f1e9f5c00f' } }
+          operationName: "VideoAccessToken_Clip",
+          variables: { platform: "web", slug: clipId },
+          extensions: { persistedQuery: { version: 1, sha256Hash: "6fd3af2b22989506269b9ac02dd87eb4a6688392d67d94e41a6886f1e9f5c00f" } }
         }
       ])
     });
 
     if (!res.ok) return null;
     const data = await res.json() as any;
-    
+
     const clipData = data[0]?.data?.clip;
     const tokenData = data[1]?.data?.clip;
     if (!clipData || !tokenData) return null;
 
     const sourceUrl = tokenData.videoQualities?.[0]?.sourceURL;
-    const playbackAccessToken = tokenData.playbackAccessToken;
+    const { playbackAccessToken } = tokenData;
     if (!sourceUrl || !playbackAccessToken) return null;
 
     const videoUrl = `${sourceUrl}?sig=${playbackAccessToken.signature}&token=${encodeURIComponent(playbackAccessToken.value)}`;
@@ -88,7 +88,7 @@ async function fetchClipInfo(clipId: string): Promise<TwitchClipInfo | null> {
 
 async function handleClip(c: Context, clipId: string): Promise<Response> {
   const originalUrl = `https://clips.twitch.tv/${clipId}`;
-  const ua = c.req.header('user-agent');
+  const ua = c.req.header("user-agent");
   if (!isBot(ua)) return c.redirect(originalUrl, 302);
 
   const info = await fetchClipInfo(clipId);
@@ -108,19 +108,18 @@ async function handleClip(c: Context, clipId: string): Promise<Response> {
     videoWidth: 1280,
     videoHeight: 720,
     color: TWITCH_COLOR,
-    siteName: 'Twitch',
-    twitterCard: 'player',
+    siteName: "Twitch",
+    twitterCard: "player",
     oembedUrl
   }));
 }
 
 export const twitchRouter = new Hono();
 
-twitchRouter.get('/oembed', (c) => {
+twitchRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: 'video', title: q.title, author_name: q.author, author_url: q.url, provider_name: 'LinkEmbedder / Twitch' }));
+  return c.json(buildOEmbed({ type: "video", title: q.title, author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / Twitch" }));
 });
 
-// Matches /clip/:id or /:id
-twitchRouter.get('/clip/:id', (c) => handleClip(c, c.req.param('id')));
-twitchRouter.get('/:id', (c) => handleClip(c, c.req.param('id')));
+twitchRouter.get("/clip/:id", c => handleClip(c, c.req.param("id")));
+twitchRouter.get("/:id", c => handleClip(c, c.req.param("id")));

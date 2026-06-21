@@ -1,15 +1,15 @@
-import { Hono } from 'hono';
-import type { Context } from 'hono';
-import { isBot } from '../utils/bot.js';
-import { buildEmbedHtml, buildOEmbed } from '../utils/html.js';
-import { twitterCache } from '../utils/cache.js';
-import { createMosaic } from '../utils/image.js';
+import { Context, Hono } from "hono";
 
-const TWITTER_COLOR = '#1D9BF0';
-const SYNDICATION_BASE = 'https://cdn.syndication.twimg.com/tweet-result';
+import { isBot } from "../utils/bot.js";
+import { twitterCache } from "../utils/cache.js";
+import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
+import { createMosaic } from "../utils/image.js";
+
+const TWITTER_COLOR = "#1D9BF0";
+const SYNDICATION_BASE = "https://cdn.syndication.twimg.com/tweet-result";
 
 interface SyndicationMedia {
-  type: 'photo' | 'video' | 'animated_gif';
+  type: "photo" | "video" | "animated_gif";
   media_url_https?: string;
   video_info?: {
     variants: Array<{ content_type: string; bitrate?: number; url: string }>;
@@ -40,7 +40,7 @@ async function fetchTweet(id: string): Promise<SyndicationTweet | null> {
   if (cached) return cached;
   try {
     const res = await fetch(`${SYNDICATION_BASE}?id=${encodeURIComponent(id)}&lang=en&token=0`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Discordbot/2.0)', Accept: 'application/json' },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Discordbot/2.0)", Accept: "application/json" },
     });
     if (!res.ok) return null;
     const data = (await res.json()) as SyndicationTweet;
@@ -56,9 +56,9 @@ function getBestVideo(tweet: SyndicationTweet): { url: string; width?: number; h
   }
   const medias = tweet.mediaDetails ?? tweet.extended_entities?.media ?? tweet.entities?.media ?? [];
   for (const m of medias) {
-    if ((m.type === 'video' || m.type === 'animated_gif') && m.video_info) {
+    if ((m.type === "video" || m.type === "animated_gif") && m.video_info) {
       const variants = m.video_info.variants
-        .filter((v) => v.content_type === 'video/mp4' && v.bitrate !== undefined)
+        .filter(v => v.content_type === "video/mp4" && v.bitrate !== undefined)
         .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
       if (variants[0]) {
         const ar = m.video_info.aspect_ratio;
@@ -70,32 +70,28 @@ function getBestVideo(tweet: SyndicationTweet): { url: string; width?: number; h
 }
 
 function getPhotos(tweet: SyndicationTweet): Array<{ url: string; width?: number; height?: number }> {
-  if (tweet.photos?.length) return tweet.photos.map((p) => ({ url: p.url, width: p.width, height: p.height }));
+  if (tweet.photos?.length) return tweet.photos.map(p => ({ url: p.url, width: p.width, height: p.height }));
   const medias = tweet.mediaDetails ?? tweet.extended_entities?.media ?? tweet.entities?.media ?? [];
-  return medias.filter((m) => m.type === 'photo').map((m) => {
+  return medias.filter(m => m.type === "photo").map(m => {
     const large = m.sizes?.large ?? m.sizes?.orig;
-    return { url: `${m.media_url_https ?? ''}?name=orig`, width: large?.w, height: large?.h };
+    return { url: `${m.media_url_https ?? ""}?name=orig`, width: large?.w, height: large?.h };
   });
 }
-
-
 
 async function handleTweet(c: Context, tweetId: string, routeUser?: string, embedIndex = -1): Promise<Response> {
   const fallbackUrl = routeUser
     ? `https://x.com/${routeUser}/status/${tweetId}`
     : `https://x.com/i/status/${tweetId}`;
 
-  const ua = c.req.header('user-agent');
+  const ua = c.req.header("user-agent");
   if (!isBot(ua)) return c.redirect(fallbackUrl, 302);
 
   const tweet = await fetchTweet(tweetId);
   if (!tweet) return c.redirect(fallbackUrl, 302);
 
-  let text = tweet.full_text ?? tweet.text ?? '';
+  const text = tweet.full_text ?? tweet.text ?? "";
 
-
-
-  const username = tweet.user?.screen_name ?? routeUser ?? 'unknown';
+  const username = tweet.user?.screen_name ?? routeUser ?? "unknown";
   const displayName = tweet.user?.name ?? username;
   const tweetUrl = `https://x.com/${username}/status/${tweetId}`;
   const authorName = `${displayName} (@${username})`;
@@ -104,7 +100,7 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
 
   const video = getBestVideo(tweet);
   if (video) {
-    return c.html(buildEmbedHtml({ description: text, url: tweetUrl, imageUrl: video.thumb, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, color: TWITTER_COLOR, siteName: 'Twitter / X', twitterCard: 'player', oembedUrl }));
+    return c.html(buildEmbedHtml({ description: text, url: tweetUrl, imageUrl: video.thumb, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, color: TWITTER_COLOR, siteName: "Twitter / X", twitterCard: "player", oembedUrl }));
   }
 
   const photos = getPhotos(tweet);
@@ -113,60 +109,60 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
     if (embedIndex >= 0) {
       const idx = Math.min(embedIndex, photos.length - 1);
       const photo = photos[idx];
-      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: photo.url, imageWidth: photo.width, imageHeight: photo.height, color: TWITTER_COLOR, siteName: 'Twitter / X', largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: photo.url, imageWidth: photo.width, imageHeight: photo.height, color: TWITTER_COLOR, siteName: "Twitter / X", largeImage: true, oembedUrl }));
     } else if (photos.length > 1) {
       const imageUrl = `${host}/twitter/grid/${tweetId}`;
-      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl, color: TWITTER_COLOR, siteName: 'Twitter / X', largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl, color: TWITTER_COLOR, siteName: "Twitter / X", largeImage: true, oembedUrl }));
     } else {
       const first = photos[0];
-      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: first.url, imageWidth: first.width, imageHeight: first.height, color: TWITTER_COLOR, siteName: 'Twitter / X', largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: first.url, imageWidth: first.width, imageHeight: first.height, color: TWITTER_COLOR, siteName: "Twitter / X", largeImage: true, oembedUrl }));
     }
   }
 
-  return c.html(buildEmbedHtml({ description: text, url: tweetUrl, color: TWITTER_COLOR, siteName: 'Twitter / X', oembedUrl }));
+  return c.html(buildEmbedHtml({ description: text, url: tweetUrl, color: TWITTER_COLOR, siteName: "Twitter / X", oembedUrl }));
 }
 
 export const twitterRouter = new Hono();
 
-twitterRouter.get('/oembed', (c) => {
+twitterRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: (q.ttype as 'link' | 'photo' | 'video') ?? 'link', author_name: q.user, author_url: q.link, provider_name: q.provider ?? 'LinkEmbedder / Twitter' }));
+  return c.json(buildOEmbed({ type: (q.ttype as "link" | "photo" | "video") ?? "link", author_name: q.user, author_url: q.link, provider_name: q.provider ?? "LinkEmbedder / Twitter" }));
 });
 
-twitterRouter.get('/grid/:id', async (c) => {
-  const id = c.req.param('id');
+twitterRouter.get("/grid/:id", async c => {
+  const id = c.req.param("id");
   const tweet = await fetchTweet(id);
-  if (!tweet) return new Response('Not found', { status: 404 });
+  if (!tweet) return new Response("Not found", { status: 404 });
   const photos = getPhotos(tweet).map(p => p.url);
-  if (!photos.length) return new Response('Not found', { status: 404 });
+  if (!photos.length) return new Response("Not found", { status: 404 });
   const buffer = await createMosaic(photos);
   if (!buffer) return c.redirect(photos[0], 302);
-  return new Response(buffer as any, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
+  return new Response(buffer as any, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" } });
 });
 
-twitterRouter.get('/:user/status/:id/video.mp4', async (c) => {
-  const tweet = await fetchTweet(c.req.param('id'));
-  if (!tweet) return new Response('Not found', { status: 404 });
+twitterRouter.get("/:user/status/:id/video.mp4", async c => {
+  const tweet = await fetchTweet(c.req.param("id"));
+  if (!tweet) return new Response("Not found", { status: 404 });
   const video = getBestVideo(tweet);
   if (video) return c.redirect(video.url, 302);
-  return new Response('No video found', { status: 404 });
+  return new Response("No video found", { status: 404 });
 });
 
-twitterRouter.get('/:user/status/:id/image.png', async (c) => {
-  const tweet = await fetchTweet(c.req.param('id'));
-  if (!tweet) return new Response('Not found', { status: 404 });
+twitterRouter.get("/:user/status/:id/image.png", async c => {
+  const tweet = await fetchTweet(c.req.param("id"));
+  if (!tweet) return new Response("Not found", { status: 404 });
   const photos = getPhotos(tweet);
   if (photos.length) return c.redirect(photos[0].url, 302);
-  return new Response('No image found', { status: 404 });
+  return new Response("No image found", { status: 404 });
 });
 
-twitterRouter.get('/:user/status/:id', (c) =>
-  handleTweet(c, c.req.param('id'), c.req.param('user'))
+twitterRouter.get("/:user/status/:id", c =>
+  handleTweet(c, c.req.param("id"), c.req.param("user"))
 );
-twitterRouter.get('/:user/status/:id/:index', (c) => {
-  const idx = parseInt(c.req.param('index') ?? '1', 10);
-  return handleTweet(c, c.req.param('id'), c.req.param('user'), isNaN(idx) ? 0 : idx - 1);
+twitterRouter.get("/:user/status/:id/:index", c => {
+  const idx = parseInt(c.req.param("index") ?? "1", 10);
+  return handleTweet(c, c.req.param("id"), c.req.param("user"), isNaN(idx) ? 0 : idx - 1);
 });
-twitterRouter.get('/i/status/:id', (c) =>
-  handleTweet(c, c.req.param('id'))
+twitterRouter.get("/i/status/:id", c =>
+  handleTweet(c, c.req.param("id"))
 );

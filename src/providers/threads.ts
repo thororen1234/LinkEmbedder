@@ -1,11 +1,11 @@
-import { Hono } from 'hono';
-import type { Context } from 'hono';
-import { isBot } from '../utils/bot.js';
-import { buildEmbedHtml, buildOEmbed } from '../utils/html.js';
-import { threadsCache } from '../utils/cache.js';
+import { Context, Hono } from "hono";
 
-const THREADS_COLOR = '#000000';
-const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+import { isBot } from "../utils/bot.js";
+import { threadsCache } from "../utils/cache.js";
+import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
+
+const THREADS_COLOR = "#000000";
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 interface ThreadsInfo {
   username: string;
@@ -16,7 +16,7 @@ interface ThreadsInfo {
 }
 
 function getPostId(shortcode: string): string {
-  const clean = shortcode.split('?')[0].replace(/[\s/]/g, '');
+  const clean = shortcode.split("?")[0].replace(/[\s/]/g, "");
   let id = 0n;
   for (const char of clean) {
     id = id * 64n + BigInt(ALPHABET.indexOf(char));
@@ -45,19 +45,19 @@ async function fetchThreadsInfo(shortcode: string): Promise<ThreadsInfo | null> 
 
     const body = new URLSearchParams({
       variables,
-      doc_id: '7448594591874178',
-      lsd: 'hgmSkqDnLNFckqa7t1vJdn'
+      doc_id: "7448594591874178",
+      lsd: "hgmSkqDnLNFckqa7t1vJdn"
     });
 
-    const res = await fetch('https://www.threads.com/api/graphql', {
-      method: 'POST',
+    const res = await fetch("https://www.threads.com/api/graphql", {
+      method: "POST",
       headers: {
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
-        'X-Fb-Lsd': 'hgmSkqDnLNFckqa7t1vJdn',
-        'X-Ig-App-Id': '238260118697367',
-        'Content-Type': 'application/x-www-form-urlencoded'
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+        "X-Fb-Lsd": "hgmSkqDnLNFckqa7t1vJdn",
+        "X-Ig-App-Id": "238260118697367",
+        "Content-Type": "application/x-www-form-urlencoded"
       },
       body
     });
@@ -70,11 +70,11 @@ async function fetchThreadsInfo(shortcode: string): Promise<ThreadsInfo | null> 
     const postObj = threadItems.find((i: any) => i.post.code === shortcode);
     if (!postObj) return null;
 
-    const post = postObj.post;
-    const username = post.user.username;
+    const { post } = postObj;
+    const { username } = post.user;
 
-    let description = post.caption?.text || '';
-    const oembedStat = `Threads`;
+    const description = post.caption?.text || "";
+    const oembedStat = "Threads";
 
     const images: string[] = [];
     let video: string | undefined;
@@ -98,18 +98,18 @@ async function fetchThreadsInfo(shortcode: string): Promise<ThreadsInfo | null> 
 
 async function handleThreadsEmbed(c: Context, user: string, shortcode: string): Promise<Response> {
   const originalUrl = `https://www.threads.net/@${user}/post/${shortcode}`;
-  const ua = c.req.header('user-agent');
+  const ua = c.req.header("user-agent");
   if (!isBot(ua)) return c.redirect(originalUrl, 302);
 
   const info = await fetchThreadsInfo(shortcode);
   if (!info) return c.redirect(originalUrl, 302);
 
   const host = new URL(c.req.url).origin;
-  const oembedUrl = `${host}/threads/oembed?title=${encodeURIComponent(info.oembedStat)}&author=${encodeURIComponent('@' + info.username)}&url=${encodeURIComponent(originalUrl)}`;
+  const oembedUrl = `${host}/threads/oembed?title=${encodeURIComponent(info.oembedStat)}&author=${encodeURIComponent("@" + info.username)}&url=${encodeURIComponent(originalUrl)}`;
 
   if (info.images.length > 1) {
     const imageUrl = `${host}/threads/grid/${shortcode}`;
-    return c.html(buildEmbedHtml({ title: `@${info.username} on Threads`, description: info.description, url: originalUrl, imageUrl, color: THREADS_COLOR, siteName: 'Threads', largeImage: true, oembedUrl }));
+    return c.html(buildEmbedHtml({ title: `@${info.username} on Threads`, description: info.description, url: originalUrl, imageUrl, color: THREADS_COLOR, siteName: "Threads", largeImage: true, oembedUrl }));
   }
 
   return c.html(buildEmbedHtml({
@@ -121,8 +121,8 @@ async function handleThreadsEmbed(c: Context, user: string, shortcode: string): 
     videoWidth: info.video ? 720 : undefined,
     videoHeight: info.video ? 1280 : undefined,
     color: THREADS_COLOR,
-    siteName: 'Threads',
-    twitterCard: info.video ? 'player' : 'summary_large_image',
+    siteName: "Threads",
+    twitterCard: info.video ? "player" : "summary_large_image",
     largeImage: !!info.images[0],
     oembedUrl
   }));
@@ -130,21 +130,21 @@ async function handleThreadsEmbed(c: Context, user: string, shortcode: string): 
 
 export const threadsRouter = new Hono();
 
-threadsRouter.get('/oembed', (c) => {
+threadsRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: 'link', title: q.title, author_name: q.author, author_url: q.url, provider_name: 'LinkEmbedder / Threads' }));
+  return c.json(buildOEmbed({ type: "link", title: q.title, author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / Threads" }));
 });
 
-threadsRouter.get('/grid/:shortcode', async (c) => {
-  const shortcode = c.req.param('shortcode');
+threadsRouter.get("/grid/:shortcode", async c => {
+  const shortcode = c.req.param("shortcode");
   const info = await fetchThreadsInfo(shortcode);
-  if (!info || info.images.length < 2) return new Response('Not found', { status: 404 });
+  if (!info || info.images.length < 2) return new Response("Not found", { status: 404 });
 
-  const { createMosaic } = await import('../utils/image.js');
+  const { createMosaic } = await import("../utils/image.js");
   const buffer = await createMosaic(info.images);
   if (!buffer) return c.redirect(info.images[0] as string, 302);
 
-  return new Response(buffer as any, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
+  return new Response(buffer as any, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" } });
 });
 
-threadsRouter.get('/@:user/post/:shortcode', (c) => handleThreadsEmbed(c, c.req.param('user') as string, c.req.param('shortcode') as string));
+threadsRouter.get("/@:user/post/:shortcode", c => handleThreadsEmbed(c, c.req.param("user") as string, c.req.param("shortcode") as string));

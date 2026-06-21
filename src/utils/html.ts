@@ -2,6 +2,7 @@ export interface EmbedOptions {
   title?: string;
   description?: string;
   url: string;
+  proxyUrl?: string;
   imageUrl?: string | string[];
   imageWidth?: number;
   imageHeight?: number;
@@ -11,13 +12,14 @@ export interface EmbedOptions {
   oembedUrl?: string;
   color?: string;
   siteName?: string;
-  twitterCard?: 'summary' | 'summary_large_image' | 'player';
+  twitterCard?: "summary" | "summary_large_image" | "player";
   largeImage?: boolean;
+  type?: string;
 }
 
 export interface OEmbedData {
-  type: 'link' | 'photo' | 'video' | 'rich';
-  version: '1.0';
+  type: "link" | "photo" | "video" | "rich";
+  version: "1.0";
   title?: string;
   author_name?: string;
   author_url?: string;
@@ -33,10 +35,10 @@ export interface OEmbedData {
 
 function esc(s: string): string {
   return s
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function meta(property: string, content: string): string {
@@ -52,6 +54,7 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
     title,
     description,
     url,
+    proxyUrl,
     imageUrl,
     imageWidth,
     imageHeight,
@@ -59,85 +62,89 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
     videoWidth,
     videoHeight,
     oembedUrl,
-    color = '#5865F2',
-    siteName = 'LinkEmbedder',
+    color = "#5865F2",
+    siteName = "LinkEmbedder",
     twitterCard,
     largeImage = false,
+    type,
   } = opts;
 
   let card = twitterCard;
   if (!card) {
-    if (videoUrl) card = 'player';
-    else if (imageUrl) card = largeImage ? 'summary_large_image' : 'summary_large_image';
-    else card = 'summary';
+    if (videoUrl) card = "player";
+    else if (imageUrl) card = largeImage ? "summary_large_image" : "summary_large_image";
+    else card = "summary";
   }
 
   const metas: string[] = [
     `<meta http-equiv="refresh" content="0; url=${esc(url)}" />`,
-    meta('og:url', url),
-    meta('og:site_name', siteName),
-    meta('theme-color', color),
-    nameMeta('twitter:card', card),
-    nameMeta('twitter:site', siteName),
+    meta("og:url", proxyUrl ?? url),
+    meta("og:type", type ?? (videoUrl ? "video.other" : "website")),
+    meta("og:site_name", siteName),
+    meta("theme-color", color),
+    nameMeta("twitter:card", card),
+    nameMeta("twitter:site", siteName),
   ];
 
   if (title) {
-    metas.push(meta('og:title', title));
-    metas.push(nameMeta('twitter:title', title));
+    metas.push(meta("og:title", title));
+    metas.push(nameMeta("twitter:title", title));
   }
 
   if (description) {
-    metas.push(meta('og:description', description));
-    metas.push(nameMeta('twitter:description', description));
+    metas.push(meta("og:description", description));
+    metas.push(nameMeta("twitter:description", description));
   }
 
   if (imageUrl) {
     const images = Array.isArray(imageUrl) ? imageUrl : [imageUrl];
     for (const img of images) {
-      metas.push(meta('og:image', img));
-      metas.push(nameMeta('twitter:image', img));
-      if (card === 'player') {
-        metas.push(nameMeta('twitter:image', img));
+      metas.push(meta("og:image", img));
+      metas.push(nameMeta("twitter:image", img));
+      if (card === "player") {
+        metas.push(nameMeta("twitter:image", img));
       }
     }
-    if (imageWidth) metas.push(meta('og:image:width', String(imageWidth)));
-    if (imageHeight) metas.push(meta('og:image:height', String(imageHeight)));
+    if (imageWidth) metas.push(meta("og:image:width", String(imageWidth)));
+    if (imageHeight) metas.push(meta("og:image:height", String(imageHeight)));
   }
 
   if (videoUrl) {
-    if (videoWidth) metas.push(nameMeta('twitter:player:width', String(videoWidth)));
-    if (videoHeight) metas.push(nameMeta('twitter:player:height', String(videoHeight)));
-    metas.push(nameMeta('twitter:player:stream', videoUrl));
-    metas.push(nameMeta('twitter:player:stream:content_type', 'video/mp4'));
-    metas.push(meta('og:video', videoUrl));
-    metas.push(meta('og:video:secure_url', videoUrl));
-    metas.push(meta('og:video:type', 'video/mp4'));
-    if (videoWidth) metas.push(meta('og:video:width', String(videoWidth)));
-    if (videoHeight) metas.push(meta('og:video:height', String(videoHeight)));
+    if (videoWidth) metas.push(nameMeta("twitter:player:width", String(videoWidth)));
+    if (videoHeight) metas.push(nameMeta("twitter:player:height", String(videoHeight)));
+    metas.push(nameMeta("twitter:player:stream", videoUrl));
+    metas.push(nameMeta("twitter:player:stream:content_type", "video/mp4"));
+    metas.push(meta("og:video", videoUrl));
+    metas.push(meta("og:video:secure_url", videoUrl));
+    metas.push(meta("og:video:type", "video/mp4"));
+    if (videoWidth) metas.push(meta("og:video:width", String(videoWidth)));
+    if (videoHeight) metas.push(meta("og:video:height", String(videoHeight)));
   }
 
   if (oembedUrl) {
     metas.push(
-      `<link rel="alternate" type="application/json+oembed" href="${esc(oembedUrl)}" title="${esc(title ?? '')}" />`
+      `<link rel="alternate" type="application/json+oembed" href="${esc(oembedUrl)}" title="${esc(title ?? "")}" />`
     );
   }
 
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-${metas.join('\n')}
-</head>
-<body>
-<a href="${esc(url)}">Redirecting…</a>
-</body>
-</html>`;
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        ${metas.join("\n")}
+      </head>
+      <body>
+        <a href="${esc(url)}">Redirecting…</a>
+      </body>
+    </html>
+  `;
 }
 
 export function buildOEmbed(data: Partial<OEmbedData>): OEmbedData {
   return {
-    type: data.type ?? 'link',
-    version: '1.0',
+    type: data.type ?? "link",
+    version: "1.0",
     ...data,
   };
 }

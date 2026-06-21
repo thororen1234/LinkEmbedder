@@ -1,11 +1,11 @@
-import sharp, { OverlayOptions } from 'sharp';
+import sharp, { OverlayOptions } from "sharp";
 
 export async function createMosaic(imageUrls: string[]): Promise<Buffer | null> {
   if (!imageUrls.length || imageUrls.length > 4) return null;
 
   try {
     const buffers = await Promise.all(
-      imageUrls.map(async (url) => {
+      imageUrls.map(async url => {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Failed to fetch ${url}`);
         return Buffer.from(await res.arrayBuffer());
@@ -23,8 +23,8 @@ export async function createMosaic(imageUrls: string[]): Promise<Buffer | null> 
     if (buffers.length === 2) {
       const w = (canvasWidth - gap) / 2;
       const h = canvasHeight;
-      const img1 = await sharp(buffers[0]).resize(Math.round(w), h, { fit: 'cover' }).toBuffer();
-      const img2 = await sharp(buffers[1]).resize(Math.round(w), h, { fit: 'cover' }).toBuffer();
+      const img1 = await sharp(buffers[0]).resize(Math.round(w), h, { fit: "cover" }).toBuffer();
+      const img2 = await sharp(buffers[1]).resize(Math.round(w), h, { fit: "cover" }).toBuffer();
       composites = [
         { input: img1, left: 0, top: 0 },
         { input: img2, left: Math.round(w + gap), top: 0 },
@@ -34,9 +34,9 @@ export async function createMosaic(imageUrls: string[]): Promise<Buffer | null> 
       const h1 = canvasHeight;
       const w2 = (canvasWidth - gap) / 2;
       const h2 = (canvasHeight - gap) / 2;
-      const img1 = await sharp(buffers[0]).resize(Math.round(w1), h1, { fit: 'cover' }).toBuffer();
-      const img2 = await sharp(buffers[1]).resize(Math.round(w2), Math.round(h2), { fit: 'cover' }).toBuffer();
-      const img3 = await sharp(buffers[2]).resize(Math.round(w2), Math.round(h2), { fit: 'cover' }).toBuffer();
+      const img1 = await sharp(buffers[0]).resize(Math.round(w1), h1, { fit: "cover" }).toBuffer();
+      const img2 = await sharp(buffers[1]).resize(Math.round(w2), Math.round(h2), { fit: "cover" }).toBuffer();
+      const img3 = await sharp(buffers[2]).resize(Math.round(w2), Math.round(h2), { fit: "cover" }).toBuffer();
       composites = [
         { input: img1, left: 0, top: 0 },
         { input: img2, left: Math.round(w1 + gap), top: 0 },
@@ -45,10 +45,10 @@ export async function createMosaic(imageUrls: string[]): Promise<Buffer | null> 
     } else if (buffers.length === 4) {
       const w = (canvasWidth - gap) / 2;
       const h = (canvasHeight - gap) / 2;
-      const img1 = await sharp(buffers[0]).resize(Math.round(w), Math.round(h), { fit: 'cover' }).toBuffer();
-      const img2 = await sharp(buffers[1]).resize(Math.round(w), Math.round(h), { fit: 'cover' }).toBuffer();
-      const img3 = await sharp(buffers[2]).resize(Math.round(w), Math.round(h), { fit: 'cover' }).toBuffer();
-      const img4 = await sharp(buffers[3]).resize(Math.round(w), Math.round(h), { fit: 'cover' }).toBuffer();
+      const img1 = await sharp(buffers[0]).resize(Math.round(w), Math.round(h), { fit: "cover" }).toBuffer();
+      const img2 = await sharp(buffers[1]).resize(Math.round(w), Math.round(h), { fit: "cover" }).toBuffer();
+      const img3 = await sharp(buffers[2]).resize(Math.round(w), Math.round(h), { fit: "cover" }).toBuffer();
+      const img4 = await sharp(buffers[3]).resize(Math.round(w), Math.round(h), { fit: "cover" }).toBuffer();
       composites = [
         { input: img1, left: 0, top: 0 },
         { input: img2, left: Math.round(w + gap), top: 0 },
@@ -71,7 +71,7 @@ export async function createMosaic(imageUrls: string[]): Promise<Buffer | null> 
 
     return output;
   } catch (err) {
-    console.error('Error creating mosaic:', err);
+    console.error("Error creating mosaic:", err);
     return null;
   }
 }

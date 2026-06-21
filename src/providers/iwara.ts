@@ -1,11 +1,11 @@
-import { Hono } from 'hono';
-import type { Context } from 'hono';
-import { isBot } from '../utils/bot.js';
-import { buildEmbedHtml, buildOEmbed } from '../utils/html.js';
-import { iwaraCache } from '../utils/cache.js';
+import { Context, Hono } from "hono";
 
-const IWARA_COLOR = '#ed7042';
-const X_VERSION = '00d377d9a3d18587749666e69858d607e396fb5a';
+import { isBot } from "../utils/bot.js";
+import { iwaraCache } from "../utils/cache.js";
+import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
+
+const IWARA_COLOR = "#ed7042";
+const X_VERSION = "00d377d9a3d18587749666e69858d607e396fb5a";
 
 interface IwaraVideoInfo {
   title: string;
@@ -31,7 +31,7 @@ async function fetchIwaraInfo(videoId: string): Promise<IwaraVideoInfo | null> {
 
 async function handleIwaraEmbed(c: Context, videoId: string, videoName: string): Promise<Response> {
   const originalUrl = `https://iwara.tv/video/${videoId}/${videoName}`;
-  const ua = c.req.header('user-agent');
+  const ua = c.req.header("user-agent");
   if (!isBot(ua)) return c.redirect(originalUrl, 302);
 
   const info = await fetchIwaraInfo(videoId);
@@ -40,7 +40,7 @@ async function handleIwaraEmbed(c: Context, videoId: string, videoName: string):
   const host = new URL(c.req.url).origin;
   const oembedUrl = `${host}/iwara/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.user.name)}&url=${encodeURIComponent(originalUrl)}`;
 
-  const description = (info.body || '').slice(0, 500);
+  const description = (info.body || "").slice(0, 500);
 
   return c.html(buildEmbedHtml({
     title: `${info.user.name} - ${info.title}`,
@@ -51,46 +51,46 @@ async function handleIwaraEmbed(c: Context, videoId: string, videoName: string):
     videoHeight: 1080,
     imageUrl: `https://i.iwara.tv/image/thumbnail/${info.file.id}/thumbnail-00.jpg`,
     color: IWARA_COLOR,
-    siteName: 'Iwara',
-    twitterCard: 'player',
+    siteName: "Iwara",
+    twitterCard: "player",
     oembedUrl
   }));
 }
 
 export const iwaraRouter = new Hono();
 
-iwaraRouter.get('/oembed', (c) => {
+iwaraRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: 'video', title: q.title, author_name: q.author, author_url: q.url, provider_name: 'LinkEmbedder / Iwara' }));
+  return c.json(buildOEmbed({ type: "video", title: q.title, author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / Iwara" }));
 });
 
-iwaraRouter.get('/dl/:videoId/:quality/video.mp4', async (c) => {
-  const videoId = c.req.param('videoId');
-  const quality = c.req.param('quality');
-  
+iwaraRouter.get("/dl/:videoId/:quality/video.mp4", async c => {
+  const videoId = c.req.param("videoId");
+  const quality = c.req.param("quality");
+
   const info = await fetchIwaraInfo(videoId);
-  if (!info || !info.fileUrl) return new Response('Not found', { status: 404 });
+  if (!info || !info.fileUrl) return new Response("Not found", { status: 404 });
 
   try {
-    const fileRes = await fetch(info.fileUrl, { headers: { 'x-version': X_VERSION } });
-    if (!fileRes.ok) return new Response('Not found', { status: 404 });
+    const fileRes = await fetch(info.fileUrl, { headers: { "x-version": X_VERSION } });
+    if (!fileRes.ok) return new Response("Not found", { status: 404 });
     const fileData = await fileRes.json() as Array<{ name: string; src: { download: string } }>;
     const qData = fileData.find(d => d.name === quality) || fileData[0];
-    if (!qData) return new Response('Not found', { status: 404 });
+    if (!qData) return new Response("Not found", { status: 404 });
 
     const videoUrl = `https:${qData.src.download}`;
-    const vidRes = await fetch(videoUrl, { redirect: 'manual' });
-    if (vidRes.status === 301 || vidRes.status === 302) return c.redirect(vidRes.headers.get('Location') ?? videoUrl, 302);
+    const vidRes = await fetch(videoUrl, { redirect: "manual" });
+    if (vidRes.status === 301 || vidRes.status === 302) return c.redirect(vidRes.headers.get("Location") ?? videoUrl, 302);
 
     const proxyHeaders = new Headers();
-    ['Content-Type', 'Content-Length', 'Accept-Ranges', 'Content-Range'].forEach(h => {
+    ["Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"].forEach(h => {
       if (vidRes.headers.has(h)) proxyHeaders.set(h, vidRes.headers.get(h)!);
     });
     return new Response(vidRes.body, { status: vidRes.status, headers: proxyHeaders });
   } catch {
-    return new Response('Not found', { status: 404 });
+    return new Response("Not found", { status: 404 });
   }
 });
 
-iwaraRouter.get('/video/:videoId/:videoName', (c) => handleIwaraEmbed(c, c.req.param('videoId'), c.req.param('videoName')));
-iwaraRouter.get('/video/:videoId', (c) => handleIwaraEmbed(c, c.req.param('videoId'), ''));
+iwaraRouter.get("/video/:videoId/:videoName", c => handleIwaraEmbed(c, c.req.param("videoId"), c.req.param("videoName")));
+iwaraRouter.get("/video/:videoId", c => handleIwaraEmbed(c, c.req.param("videoId"), ""));

@@ -1,33 +1,33 @@
-import { serve } from '@hono/node-server';
-import { Hono } from 'hono';
-import { trimTrailingSlash } from 'hono/trailing-slash';
+import { serve } from "@hono/node-server";
+import { Hono } from "hono";
+import { trimTrailingSlash } from "hono/trailing-slash";
 
-import { twitterRouter } from './providers/twitter.js';
-import { instagramRouter } from './providers/instagram.js';
-import { redditRouter } from './providers/reddit.js';
-import { tiktokRouter } from './providers/tiktok.js';
-import { blueskyRouter } from './providers/bluesky.js';
-import { pixivRouter } from './providers/pixiv.js';
-import { tumblrRouter } from './providers/tumblr.js';
-import { twitchRouter } from './providers/twitch.js';
-import { bilibiliRouter } from './providers/bilibili.js';
-import { facebookRouter } from './providers/facebook.js';
-import { furaffinityRouter } from './providers/furaffinity.js';
-import { deviantartRouter } from './providers/deviantart.js';
-import { iwaraRouter } from './providers/iwara.js';
-import { pttRouter } from './providers/ptt.js';
-import { threadsRouter } from './providers/threads.js';
+import { bilibiliRouter } from "./providers/bilibili.js";
+import { blueskyRouter } from "./providers/bluesky.js";
+import { deviantartRouter } from "./providers/deviantart.js";
+import { facebookRouter } from "./providers/facebook.js";
+import { furaffinityRouter } from "./providers/furaffinity.js";
+import { instagramRouter } from "./providers/instagram.js";
+import { iwaraRouter } from "./providers/iwara.js";
+import { pixivRouter } from "./providers/pixiv.js";
+import { pttRouter } from "./providers/ptt.js";
+import { redditRouter } from "./providers/reddit.js";
+import { threadsRouter } from "./providers/threads.js";
+import { tiktokRouter } from "./providers/tiktok.js";
+import { tumblrRouter } from "./providers/tumblr.js";
+import { twitchRouter } from "./providers/twitch.js";
+import { twitterRouter } from "./providers/twitter.js";
 
 try {
-  const { readFileSync } = await import('fs');
-  const envFile = readFileSync('.env', 'utf8');
-  for (const line of envFile.split('\n')) {
+  const { readFileSync } = await import("fs");
+  const envFile = readFileSync(".env", "utf8");
+  for (const line of envFile.split("\n")) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
     if (eq < 0) continue;
     const key = trimmed.slice(0, eq).trim();
-    const value = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+    const value = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
     if (key && !(key in process.env)) process.env[key] = value;
   }
 } catch { }
@@ -36,7 +36,7 @@ const app = new Hono();
 
 app.use(trimTrailingSlash());
 
-app.get('/', (c) =>
+app.get("/", c =>
   c.html(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -84,32 +84,32 @@ app.get('/', (c) =>
 </html>`)
 );
 
-app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
-app.route('/twitter', twitterRouter);
-app.route('/x', twitterRouter);
-app.route('/ig', instagramRouter);
-app.route('/insta', instagramRouter);
-app.route('/instagram', instagramRouter);
-app.route('/reddit', redditRouter);
-app.route('/r', redditRouter);
-app.route('/tiktok', tiktokRouter);
-app.route('/tk', tiktokRouter);
-app.route('/bsky', blueskyRouter);
-app.route('/pixiv', pixivRouter);
-app.route('/tumblr', tumblrRouter);
-app.route('/twitch', twitchRouter);
-app.route('/bilibili', bilibiliRouter);
-app.route('/facebook', facebookRouter);
-app.route('/furaffinity', furaffinityRouter);
-app.route('/deviantart', deviantartRouter);
-app.route('/iwara', iwaraRouter);
-app.route('/ptt', pttRouter);
-app.route('/threads', threadsRouter);
-app.all('*', (c) =>
-  c.json({ error: 'Not found. Check / for available routes.' }, 404)
+app.get("/health", c => c.json({ status: "ok", timestamp: new Date().toISOString() }));
+app.route("/twitter", twitterRouter);
+app.route("/x", twitterRouter);
+app.route("/ig", instagramRouter);
+app.route("/insta", instagramRouter);
+app.route("/instagram", instagramRouter);
+app.route("/reddit", redditRouter);
+app.route("/r", redditRouter);
+app.route("/tiktok", tiktokRouter);
+app.route("/tk", tiktokRouter);
+app.route("/bsky", blueskyRouter);
+app.route("/pixiv", pixivRouter);
+app.route("/tumblr", tumblrRouter);
+app.route("/twitch", twitchRouter);
+app.route("/bilibili", bilibiliRouter);
+app.route("/facebook", facebookRouter);
+app.route("/furaffinity", furaffinityRouter);
+app.route("/deviantart", deviantartRouter);
+app.route("/iwara", iwaraRouter);
+app.route("/ptt", pttRouter);
+app.route("/threads", threadsRouter);
+app.all("*", c =>
+  c.json({ error: "Not found. Check / for available routes." }, 404)
 );
 
-const port = parseInt(process.env.PORT ?? '3000', 10);
+const port = parseInt(process.env.PORT ?? "3000", 10);
 
 console.log(`started on http://localhost:${port}\n`);
 serve({ fetch: app.fetch, port });
