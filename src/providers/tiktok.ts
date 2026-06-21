@@ -135,12 +135,7 @@ tiktokRouter.get('/play/:videoId/video.mp4', async (c) => {
     if (videoRes.status === 302 || videoRes.status === 301) {
       return c.redirect(videoRes.headers.get('Location') || playAddrUrl, 302);
     } else {
-      return new Response(videoRes.body, {
-        headers: {
-          'Content-Type': videoRes.headers.get('content-type') ?? 'video/mp4',
-          'Cache-Control': 'public, max-age=86400',
-        }
-      });
+      return videoRes;
     }
   } catch {
     return c.redirect(playAddrUrl, 302);
