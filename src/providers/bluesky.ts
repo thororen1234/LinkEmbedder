@@ -80,8 +80,7 @@ async function handlePostEmbed(c: Context, user: string, postId: string): Promis
   const text = post.record?.text ?? '';
   const host = new URL(c.req.url).origin;
   const oembedUrl = `${host}/bsky/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}`;
-  const statsLine = [post.likeCount != null ? `❤️ ${post.likeCount.toLocaleString()}` : '', post.repostCount != null ? `🔁 ${post.repostCount.toLocaleString()}` : '', post.replyCount != null ? `💬 ${post.replyCount.toLocaleString()}` : ''].filter(Boolean).join(' · ');
-  const description = [text, statsLine].filter(Boolean).join('\n');
+  const description = text;
 
   const video = getVideo(post.embed, post.author.did);
   if (video) return c.html(buildEmbedHtml({ description, url: originalUrl, videoUrl: video.url, videoWidth: video.width ?? 1080, videoHeight: video.height ?? 1080, imageUrl: video.thumb, color: BSKY_COLOR, siteName: 'Bluesky', twitterCard: 'player', oembedUrl }));
@@ -90,7 +89,7 @@ async function handlePostEmbed(c: Context, user: string, postId: string): Promis
   if (images.length) {
     const first = images[0];
     const imageUrls = images.slice(0, 4).map(i => i.fullsize);
-    return c.html(buildEmbedHtml({ description: description + (images.length > 1 ? `\n\n🖼️ ${images.length} images` : ''), url: originalUrl, imageUrl: imageUrls, imageWidth: first.aspectRatio?.width, imageHeight: first.aspectRatio?.height, color: BSKY_COLOR, siteName: 'Bluesky', largeImage: true, oembedUrl }));
+    return c.html(buildEmbedHtml({ description, url: originalUrl, imageUrl: imageUrls, imageWidth: first.aspectRatio?.width, imageHeight: first.aspectRatio?.height, color: BSKY_COLOR, siteName: 'Bluesky', largeImage: true, oembedUrl }));
   }
 
   const ext = post.embed?.$type === 'app.bsky.embed.external#view' ? post.embed.external : undefined;

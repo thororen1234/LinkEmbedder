@@ -86,7 +86,7 @@ async function handlePost(permalink: string, c: Context): Promise<Response> {
   const gallery = getGalleryImages(effective);
   if (gallery.length > 1) {
     const first = gallery[0];
-    return c.html(buildEmbedHtml({ title: authorLabel, description: `${post.title}\n\n🖼️ Gallery: ${gallery.length} images`, url: originalUrl, imageUrl: first.url, imageWidth: first.width, imageHeight: first.height, color: REDDIT_COLOR, siteName: 'Reddit', largeImage: true, oembedUrl }));
+    return c.html(buildEmbedHtml({ title: authorLabel, description: post.title, url: originalUrl, imageUrl: first.url, imageWidth: first.width, imageHeight: first.height, color: REDDIT_COLOR, siteName: 'Reddit', largeImage: true, oembedUrl }));
   }
 
   if (effective.post_hint === 'image' || effective.is_reddit_media_domain) {

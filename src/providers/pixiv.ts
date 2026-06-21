@@ -78,8 +78,7 @@ async function handleArtwork(c: Context, illustId: string, lang = 'en', imageInd
   const tags = body.tags.tags.map((t) => `#${t.translation?.[lang] ?? t.tag}`).join(', ');
   const aiLabel = body.ai_type === 2 ? '[AI Generated] ' : '';
   const rawDesc = body.description.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim().slice(0, 200);
-  const stats = `❤️ ${body.likeCount.toLocaleString()} 🔖 ${body.bookmarkCount.toLocaleString()} 👁 ${body.viewCount.toLocaleString()}`;
-  const description = [aiLabel + rawDesc, tags, stats, body.pageCount > 1 ? `🖼️ ${body.pageCount} pages` : ''].filter(Boolean).join('\n');
+  const description = [aiLabel + rawDesc, tags].filter(Boolean).join('\n');
 
   return c.html(buildEmbedHtml({
     title: `${body.title} — ${body.userName}`,

@@ -98,7 +98,7 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
 
   const photos = getPhotos(tweet);
   if (photos.length) {
-    const desc = photos.length > 1 ? `${text}\n\n🖼️ ${photos.length} images` : text;
+    const desc = text;
     if (embedIndex >= 0) {
       const idx = Math.min(embedIndex, photos.length - 1);
       const photo = photos[idx];

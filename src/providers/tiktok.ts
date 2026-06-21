@@ -7,7 +7,7 @@ import { tiktokCache } from '../utils/cache.js';
 const TIKTOK_COLOR = '#010101';
 
 interface TikTokAuthor { nickname?: string; uniqueId?: string; avatarThumb?: string; }
-interface TikTokVideo { width?: number; height?: number; duration?: number; cover?: string | { urlList?: string[] }; playAddr?: string | { urlList?: string[] }; }
+interface TikTokVideo { width?: number; height?: number; duration?: number; cover?: string | { urlList?: string[] }; playAddr?: string | { urlList?: string[] }; playAddrStruct?: { urlList?: string[] }; PlayAddrStruct?: { UrlList?: string[] }; }
 interface TikTokStats { diggCount?: number; commentCount?: number; playCount?: number; }
 interface TikTokItem {
   id?: string; desc?: string; author?: TikTokAuthor; video?: TikTokVideo;
@@ -94,19 +94,18 @@ async function handleVideoEmbed(c: Context, awemeId: string): Promise<Response> 
     const images = item.imagePost.images;
     const imageUrls = images.slice(0, 4).map(i => i.imageURL?.urlList?.[0]).filter(Boolean) as string[];
     const count = images.length;
-    return c.html(buildEmbedHtml({ description: description + (count > 1 ? `\n\n🖼️ ${count} photos` : ''), url: postUrl, imageUrl: imageUrls, color: TIKTOK_COLOR, siteName: 'TikTok', largeImage: true, oembedUrl }));
+    return c.html(buildEmbedHtml({ description, url: postUrl, imageUrl: imageUrls, color: TIKTOK_COLOR, siteName: 'TikTok', largeImage: true, oembedUrl }));
   }
 
   const stats = item.stats;
-  const statsLine = stats ? `▶ ${(stats.playCount ?? 0).toLocaleString()} · ❤️ ${(stats.diggCount ?? 0).toLocaleString()} · 💬 ${(stats.commentCount ?? 0).toLocaleString()}` : '';
   const coverObj = item.video?.cover;
   const coverUrl = typeof coverObj === 'string' ? coverObj : coverObj?.urlList?.[0];
 
-  const playAddrObj = item.video?.playAddr;
-  const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : playAddrObj?.urlList?.[0];
+  const playAddrObj = (item.video?.playAddr ?? item.video?.playAddrStruct ?? item.video?.PlayAddrStruct) as any;
+  const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : (playAddrObj?.urlList?.[0] ?? playAddrObj?.UrlList?.[0]);
   const videoUrl = playAddrUrl ? `${host}/tiktok/play/${awemeId}/video.mp4` : postUrl;
 
-  return c.html(buildEmbedHtml({ description: [description, statsLine].filter(Boolean).join('\n'), url: postUrl, videoUrl, videoWidth: item.video?.width ?? 1080, videoHeight: item.video?.height ?? 1920, imageUrl: coverUrl ?? item.author?.avatarThumb, color: TIKTOK_COLOR, siteName: 'TikTok', twitterCard: 'player', oembedUrl }));
+  return c.html(buildEmbedHtml({ description, url: postUrl, videoUrl, videoWidth: item.video?.width ?? 1080, videoHeight: item.video?.height ?? 1920, imageUrl: coverUrl ?? item.author?.avatarThumb, color: TIKTOK_COLOR, siteName: 'TikTok', twitterCard: 'player', oembedUrl }));
 }
 
 export const tiktokRouter = new Hono();
@@ -119,8 +118,8 @@ tiktokRouter.get('/oembed', (c) => {
 tiktokRouter.get('/play/:videoId/video.mp4', async (c) => {
   const awemeId = c.req.param('videoId');
   const item = await fetchVideoData(awemeId);
-  const playAddrObj = item?.video?.playAddr;
-  const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : playAddrObj?.urlList?.[0];
+  const playAddrObj = (item?.video?.playAddr ?? item?.video?.playAddrStruct ?? item?.video?.PlayAddrStruct) as any;
+  const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : (playAddrObj?.urlList?.[0] ?? playAddrObj?.UrlList?.[0]);
   if (!playAddrUrl) return c.redirect(`https://www.tiktok.com/@i/video/${awemeId}`, 302);
 
   try {

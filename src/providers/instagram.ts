@@ -28,7 +28,12 @@ async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
     const userMatch = html.match(/class="UsernameText"[^>]*>([^<]+)</);
     const username = userMatch?.[1]?.trim() ?? '';
     const captionMatch = html.match(/class="Caption"[^>]*>([\s\S]*?)<\/div>/);
-    const caption = (captionMatch?.[1] ?? '').replace(/<[^>]+>/g, '').trim();
+    let caption = (captionMatch?.[1] ?? '').replace(/<[^>]+>/g, '').trim();
+    if (username && caption.startsWith(username)) {
+      caption = caption.substring(username.length).trim();
+    }
+    caption = caption.replace(/View all \d+ comments$/i, '').trim();
+    caption = caption.replace(/Add a comment\.\.\.$/i, '').trim();
     const isVideo = html.includes('EmbeddedMediaVideo');
     const mediaMatch = isVideo
       ? html.match(/class="EmbeddedMediaVideo"[^>]*src="([^"]+)"/)
@@ -105,12 +110,32 @@ instagramRouter.get('/images/:id/:n', async (c) => {
   } catch { return c.redirect(media.url, 302); }
 });
 
-instagramRouter.get('/videos/:id/:n', async (c) => {
+instagramRouter.get('/videos/:id/:n/video.mp4', async (c) => {
   const { id, n } = c.req.param();
   const data = await getInstaData(id);
   if (!data) return c.redirect(`https://www.instagram.com/p/${id}/`, 302);
   const idx = Math.max(1, parseInt(n, 10)) - 1;
-  return c.redirect(data.medias[idx]?.url ?? `https://www.instagram.com/p/${id}/`, 302);
+  const mediaUrl = data.medias[idx]?.url;
+  if (!mediaUrl) return c.redirect(`https://www.instagram.com/p/${id}/`, 302);
+
+  try {
+    const videoRes = await fetch(mediaUrl, {
+      headers: {
+        'User-Agent': GQL_HEADERS['User-Agent'],
+        'Referer': 'https://www.instagram.com/',
+        'Accept': '*/*'
+      },
+      redirect: 'manual'
+    });
+
+    if (videoRes.status === 301 || videoRes.status === 302) {
+      return c.redirect(videoRes.headers.get('Location') || mediaUrl, 302);
+    } else {
+      return videoRes;
+    }
+  } catch {
+    return c.redirect(mediaUrl, 302);
+  }
 });
 
 async function handleEmbed(c: Context): Promise<Response> {
@@ -137,9 +162,9 @@ async function handleEmbed(c: Context): Promise<Response> {
   const n = idx + 1;
 
   if (isVideo) {
-    return c.html(buildEmbedHtml({ description, url: originalUrl, videoUrl: `${host}/ig/videos/${postId}/${n}`, videoWidth: 1080, videoHeight: 1080, color: INSTA_COLOR, siteName: 'Instagram', twitterCard: 'player', oembedUrl }));
+    return c.html(buildEmbedHtml({ description, url: originalUrl, videoUrl: `${host}/ig/videos/${postId}/${n}/video.mp4`, videoWidth: 1080, videoHeight: 1080, color: INSTA_COLOR, siteName: 'Instagram', twitterCard: 'player', oembedUrl }));
   }
-  const galleryDesc = data.medias.length > 1 ? `${description}\n\n🖼️ ${data.medias.length} images` : description;
+  const galleryDesc = description;
   if (mediaNumParam) {
     return c.html(buildEmbedHtml({ description: galleryDesc, url: originalUrl, imageUrl: `${host}/ig/images/${postId}/${n}`, color: INSTA_COLOR, siteName: 'Instagram', largeImage: true, oembedUrl }));
   } else {
