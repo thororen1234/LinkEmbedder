@@ -104,7 +104,7 @@ async function handleVideoEmbed(c: Context, awemeId: string): Promise<Response> 
 
   const playAddrObj = item.video?.playAddr;
   const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : playAddrObj?.urlList?.[0];
-  const videoUrl = playAddrUrl ? `${host}/tiktok/play/${awemeId}` : postUrl;
+  const videoUrl = playAddrUrl ? `${host}/tiktok/play/${awemeId}/video.mp4` : postUrl;
 
   return c.html(buildEmbedHtml({ description: [description, statsLine].filter(Boolean).join('\n'), url: postUrl, videoUrl, videoWidth: item.video?.width ?? 1080, videoHeight: item.video?.height ?? 1920, imageUrl: coverUrl ?? item.author?.avatarThumb, color: TIKTOK_COLOR, siteName: 'TikTok', twitterCard: 'player', oembedUrl }));
 }
@@ -116,7 +116,7 @@ tiktokRouter.get('/oembed', (c) => {
   return c.json(buildOEmbed({ type: 'video', author_name: q.author, author_url: q.url, provider_name: 'LinkEmbedder / TikTok' }));
 });
 
-tiktokRouter.get('/play/:videoId', async (c) => {
+tiktokRouter.get('/play/:videoId/video.mp4', async (c) => {
   const awemeId = c.req.param('videoId');
   const item = await fetchVideoData(awemeId);
   const playAddrObj = item?.video?.playAddr;
