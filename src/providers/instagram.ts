@@ -81,10 +81,6 @@ async function getInstaData(postId: string): Promise<InstaData | null> {
   let data = await scrapeFromEmbed(postId);
   if (!data || !data.medias.length) data = await scrapeFromGQL(postId);
   if (!data) return null;
-  data.medias = data.medias.map((m) => {
-    try { const u = new URL(m.url); u.hostname = 'scontent.cdninstagram.com'; return { ...m, url: u.toString() }; }
-    catch { return m; }
-  });
   instagramCache.set(postId, data);
   return data;
 }
@@ -112,6 +108,7 @@ instagramRouter.get('/images/:id/:n', async (c) => {
 
 instagramRouter.get('/videos/:id/:n/video.mp4', async (c) => {
   const { id, n } = c.req.param();
+  instagramCache.delete(id);
   const data = await getInstaData(id);
   if (!data) return c.redirect(`https://www.instagram.com/p/${id}/`, 302);
   const idx = Math.max(1, parseInt(n, 10)) - 1;
@@ -128,6 +125,7 @@ instagramRouter.get('/videos/:id/:n/video.mp4', async (c) => {
 
   try {
     const videoRes = await fetch(mediaUrl, { headers, redirect: 'follow' });
+    if (!videoRes.ok) return c.redirect(mediaUrl, 302);
     const proxyHeaders = new Headers();
     ['Content-Type', 'Content-Length', 'Accept-Ranges', 'Content-Range'].forEach(h => {
       if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);

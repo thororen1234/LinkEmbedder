@@ -56,9 +56,9 @@ export class LRUCache<T> {
 }
 
 export const twitterCache = new LRUCache<unknown>(256, 15 * 60 * 1000);
-export const instagramCache = new LRUCache<unknown>(256, 60 * 60 * 1000);
+export const instagramCache = new LRUCache<unknown>(256, 5 * 60 * 1000);
 export const redditCache = new LRUCache<unknown>(256, 30 * 60 * 1000);
-export const tiktokCache = new LRUCache<unknown>(256, 60 * 60 * 1000);
+export const tiktokCache = new LRUCache<unknown>(256, 5 * 60 * 1000);
 export const blueskyCache = new LRUCache<unknown>(256, 15 * 60 * 1000);
 export const pixivCache = new LRUCache<unknown>(512, 60 * 60 * 1000);
 export const tumblrCache = new LRUCache<unknown>(256, 60 * 60 * 1000);

@@ -122,15 +122,18 @@ tiktokRouter.get('/play/:videoId/video.mp4', async (c) => {
   const playAddrUrl = typeof playAddrObj === 'string' ? playAddrObj : (playAddrObj?.urlList?.[0] ?? playAddrObj?.UrlList?.[0] ?? item?.video?.bitrateInfo?.[0]?.PlayAddr?.UrlList?.[0]);
   if (!playAddrUrl) return c.redirect(`https://www.tiktok.com/@i/video/${awemeId}`, 302);
 
-  const range = c.req.header('Range');
-  const headers: Record<string, string> = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
-    'Accept': '*/*'
-  };
-  if (range) headers['Range'] = range;
-
   try {
-    const videoRes = await fetch(playAddrUrl, { headers, redirect: 'follow' });
+    const videoRes = await fetch(playAddrUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+        Accept: '*/*'
+      },
+      redirect: 'manual'
+    });
+
+    if (videoRes.status === 302 || videoRes.status === 301) {
+      return c.redirect(videoRes.headers.get('Location') || playAddrUrl, 302);
+    }
     const proxyHeaders = new Headers();
     ['Content-Type', 'Content-Length', 'Accept-Ranges', 'Content-Range'].forEach(h => {
       if (videoRes.headers.has(h)) proxyHeaders.set(h, videoRes.headers.get(h)!);
