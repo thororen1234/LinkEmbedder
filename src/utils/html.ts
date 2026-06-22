@@ -144,8 +144,8 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
 
 export function buildOEmbed(data: Partial<OEmbedData>): OEmbedData {
   return {
-    type: data.type ?? "link",
-    version: "1.0",
     ...data,
+    type: "rich",
+    version: "1.0",
   };
 }

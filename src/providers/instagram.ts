@@ -327,7 +327,7 @@ instagramRouter.get("/oembed", c => {
     type: (q.type as any) || "link",
     author_name: q.user,
     author_url: q.url,
-    provider_name: "LinkEmbedder / Instagram"
+    provider_name: q.provider ?? "LinkEmbedder / Instagram"
   }));
 });
 
@@ -378,16 +378,30 @@ instagramRouter.get("/videos/:id/:n/video.mp4", async c => {
   const mediaUrl = data.medias[Math.max(0, n)]?.url;
   if (!mediaUrl) return c.redirect(`https://www.instagram.com/p/${id}/`, 302);
 
+  const range = c.req.header("range");
+
+  const fetchHeaders: Record<string, string> = {
+    Referer: "https://www.instagram.com/",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    Accept: "*/*",
+    "sec-fetch-site": "cross-site",
+  };
+  if (range) fetchHeaders.Range = range;
+
   try {
-    const videoRes = await fetch(mediaUrl, {
-      headers: {
-        Referer: "https://www.instagram.com/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-        Accept: "*/*",
-        "sec-fetch-site": "cross-site",
-      },
-      redirect: "manual"
-    });
+    let videoRes = await fetch(mediaUrl, { headers: fetchHeaders, redirect: "manual" });
+
+    let redirectHops = 0;
+    const MAX_REDIRECT_HOPS = 5;
+    while (
+      (videoRes.status === 301 || videoRes.status === 302 || videoRes.status === 303 || videoRes.status === 307 || videoRes.status === 308) &&
+      redirectHops < MAX_REDIRECT_HOPS
+    ) {
+      const location = videoRes.headers.get("location");
+      if (!location) break;
+      videoRes = await fetch(location, { headers: fetchHeaders, redirect: "manual" });
+      redirectHops += 1;
+    }
 
     if (!videoRes.ok && videoRes.status !== 206) {
       return c.redirect(mediaUrl, 302);
@@ -448,11 +462,13 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
   }
 
   const description = data.caption.slice(0, 280) + (data.caption.length > 280 ? "…" : "");
-  const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(`@${data.username}`)}&url=${encodeURIComponent(originalUrl)}&type=${isVideo ? "video" : "link"}`;
+  const dateStr = data.date ? ` • ${data.date}` : "";
+  const customSiteName = `Instagram${dateStr}`;
+
+  const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(`@${data.username}`)}&url=${encodeURIComponent(originalUrl)}&type=${isVideo ? "video" : "link"}&provider=${encodeURIComponent(customSiteName)}`;
 
   if (isVideo) {
     return c.html(buildEmbedHtml({
-      title: data.date ? `Published ${data.date}` : undefined,
       description,
       url: originalUrl,
       proxyUrl: c.req.url,
@@ -461,7 +477,7 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
       videoHeight: 1920,
       imageUrl: `${host}/ig/thumb/${postId}/${idx + 1}`,
       color: INSTA_COLOR,
-      siteName: "Instagram",
+      siteName: customSiteName,
       twitterCard: "player",
       oembedUrl
     }));
@@ -469,26 +485,24 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
 
   if (isGrid) {
     return c.html(buildEmbedHtml({
-      title: data.date ? `Published ${data.date}` : undefined,
       description,
       url: originalUrl,
       proxyUrl: c.req.url,
       imageUrl: `${host}/ig/grid/${postId}`,
       color: INSTA_COLOR,
-      siteName: "Instagram",
+      siteName: customSiteName,
       largeImage: true,
       oembedUrl
     }));
   }
 
   return c.html(buildEmbedHtml({
-    title: data.date ? `Published ${data.date}` : undefined,
     description,
     url: originalUrl,
     proxyUrl: c.req.url,
     imageUrl: `${host}/ig/images/${postId}/1`,
     color: INSTA_COLOR,
-    siteName: "Instagram",
+    siteName: customSiteName,
     largeImage: true,
     oembedUrl
   }));
