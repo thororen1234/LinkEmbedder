@@ -351,9 +351,7 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
   const postId = manualId || c.req.param("id") || c.req.path.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/)?.[1];
   if (!postId) return c.redirect("https://www.instagram.com/", 302);
 
-  const typeMatch = c.req.path.match(/\/(p|reel|reels|tv)\//) ?? c.req.query("url")?.match(/\/(p|reel|reels|tv)\//);
-  const type = typeMatch ? typeMatch[1] : "p";
-  const originalUrl = `https://www.instagram.com/${type}/${postId}/`;
+  const originalUrl = `https://www.instagram.com/p/${postId}/`;
   const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
   const isDirect = dParam !== undefined;
 
@@ -367,10 +365,10 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
   const isGrid = data.medias.length > 1 && !imgIndexParam;
   const idx = Math.max(0, (parseInt(imgIndexParam || "1") - 1));
   const media = data.medias[Math.min(idx, data.medias.length - 1)];
-  const isVideo = media.typeName.includes("Video") || ["reel", "reels", "tv"].includes(type);
+  const isVideo = media.typeName.includes("Video");
 
   if (isDirect) {
-    if (isVideo) return c.redirect(`https://instafix.thororen.com/videos/${postId}/${idx + 1}`, 302);
+    if (isVideo) return c.redirect(`${host}/ig/videos/${postId}/${idx + 1}/video.mp4`, 302);
     return c.redirect(`${host}/ig/images/${postId}/${idx + 1}`, 302);
   }
 
@@ -378,16 +376,19 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
   const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(`@${data.username}`)}&url=${encodeURIComponent(originalUrl)}&type=${isVideo ? "video" : "link"}`;
 
   if (isVideo) {
-    const targetUrl = `https://instafix.thororen.com/${type}/${postId}${idx > 0 ? `/${idx + 1}` : ""}`;
-    try {
-      const res = await fetch(targetUrl, { headers: { "User-Agent": ua ?? "" } });
-      if (res.ok) {
-        let html = await res.text();
-        html = html.replace(/(content|href)="\//g, '$1="https://instafix.thororen.com/');
-        return c.html(html);
-      }
-    } catch { }
-    return c.redirect(targetUrl, 302);
+    return c.html(buildEmbedHtml({
+      description,
+      url: originalUrl,
+      proxyUrl: c.req.url,
+      videoUrl: `${host}/ig/videos/${postId}/${idx + 1}/video.mp4`,
+      videoWidth: 1080,
+      videoHeight: 1920,
+      imageUrl: `${host}/ig/thumb/${postId}/${idx + 1}`,
+      color: INSTA_COLOR,
+      siteName: "Instagram",
+      twitterCard: "player",
+      oembedUrl
+    }));
   }
 
   if (isGrid) {
