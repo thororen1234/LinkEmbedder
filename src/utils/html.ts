@@ -89,11 +89,14 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
   if (title) {
     metas.push(meta("og:title", title));
     metas.push(nameMeta("twitter:title", title));
-  } else if (description) {
+  } 
+  /*
+  else if (description) {
     const fallbackTitle = "\u2800";
     metas.push(meta("og:title", fallbackTitle));
     metas.push(nameMeta("twitter:title", fallbackTitle));
   }
+    */
 
   if (description) {
     metas.push(meta("og:description", description));
