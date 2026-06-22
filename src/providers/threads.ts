@@ -54,7 +54,7 @@ async function fetchThreadsInfo(shortcode: string): Promise<ThreadsInfo | null> 
       headers: {
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
         "X-Fb-Lsd": "hgmSkqDnLNFckqa7t1vJdn",
         "X-Ig-App-Id": "238260118697367",
         "Content-Type": "application/x-www-form-urlencoded"

@@ -21,7 +21,7 @@ async function fetchPttPost(board: string, id: string): Promise<PttPost | null> 
 
   try {
     const res = await fetch(url, {
-      headers: { Cookie: "over18=1", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
+      headers: { Cookie: "over18=1", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36" }
     });
     if (!res.ok) return null;
     const html = await res.text();
@@ -125,7 +125,7 @@ pttRouter.get("/bbs/:board/:id", c => {
   return handlePttEmbed(c, c.req.param("board"), id);
 });
 
-function extractPttParams(urlStr: string): { board: string; id: string } | null {
+function extractPttParams(urlStr: string): { board: string; id: string; } | null {
   try {
     const url = new URL(urlStr);
     if (url.hostname.includes("ptt.cc")) {

@@ -16,37 +16,78 @@ const GQL_HEADERS: Record<string, string> = {
   "Content-Type": "application/x-www-form-urlencoded",
   Origin: "https://www.instagram.com",
   Referer: "https://www.instagram.com/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
   "X-Ig-App-Id": "936619743392459",
   "X-Fb-Friendly-Name": "PolarisPostActionLoadPostQueryQuery",
   "sec-fetch-site": "same-origin",
 };
 
-function extractGqlData(html: string): any {
+function findItemDeep(obj: any): any {
+  if (!obj || typeof obj !== "object") return null;
+
+  const stack = [obj];
+  const visited = new Set();
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current || typeof current !== "object") continue;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    if (current.shortcode_media) return current.shortcode_media;
+    if (current.xdt_shortcode_media) return current.xdt_shortcode_media;
+
+    if (current.is_video !== undefined && current.display_url) {
+      return current;
+    }
+    if (current.video_url || current.video_versions) {
+      if (current.__typename === "GraphVideo" || current.is_video) return current;
+    }
+
+    if (Array.isArray(current)) {
+      for (const item of current) stack.push(item);
+    } else {
+      for (const key of Object.keys(current)) stack.push(current[key]);
+    }
+  }
+  return null;
+}
+
+function extractAllJsonFromHtml(html: string): any[] {
+  const results: any[] = [];
+
+  const scriptRegex = /<script[^>]*type="application\/json"[^>]*>([\s\S]*?)<\/script>/gi;
+  let match;
+  while ((match = scriptRegex.exec(html)) !== null) {
+    try { results.push(JSON.parse(match[1])); } catch { }
+  }
+
+  const addDataRegex = /window\.__additionalDataLoaded\s*\([^,]+,\s*({[\s\S]+?})\s*\);/g;
+  while ((match = addDataRegex.exec(html)) !== null) {
+    try { results.push(JSON.parse(match[1])); } catch { }
+  }
+
   const marker = '\\"gql_data\\":\\"';
   const startIdx = html.indexOf(marker);
-  if (startIdx === -1) return null;
-
-  const start = startIdx + marker.length;
-  let end = start;
-  while (end < html.length) {
-    if (html[end] === "\\" && html[end + 1] === '"') {
-      end += 2;
-      continue;
+  if (startIdx !== -1) {
+    const start = startIdx + marker.length;
+    let end = start;
+    while (end < html.length) {
+      if (html[end] === "\\" && html[end + 1] === '"') {
+        end += 2;
+        continue;
+      }
+      if (html[end] === '"' && html[end - 1] !== "\\") break;
+      end++;
     }
-    if (html[end] === '"' && html[end - 1] !== "\\") {
-      break;
-    }
-    end++;
+    try {
+      const escaped = html.substring(start, end);
+      const unescaped = JSON.parse('"' + escaped + '"');
+      results.push(JSON.parse(unescaped));
+    } catch { }
   }
 
-  try {
-    const escaped = html.substring(start, end);
-    const unescaped = JSON.parse('"' + escaped + '"');
-    return JSON.parse(unescaped);
-  } catch {
-    return null;
-  }
+  return results;
 }
 
 function parseGqlItem(item: any, postId: string): InstaData | null {
@@ -66,8 +107,12 @@ function parseGqlItem(item: any, postId: string): InstaData | null {
       videoUrl = node.video_versions[0].url;
     }
 
-    const displayUrl = node.display_url;
-    const isVideoNode = node.is_video || node.__typename?.includes("Video");
+    let displayUrl = node.display_url;
+    if (!displayUrl && node.image_versions2?.candidates?.length) {
+      displayUrl = node.image_versions2.candidates[0].url;
+    }
+
+    const isVideoNode = node.is_video || node.__typename?.includes("Video") || videoUrl !== undefined;
 
     if (isVideoNode && !videoUrl) return null;
 
@@ -93,16 +138,25 @@ function parseGqlItem(item: any, postId: string): InstaData | null {
 async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
   try {
     const res = await fetch(`https://www.instagram.com/p/${postId}/embed/captioned/`, {
-      headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1" },
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1"
+      },
     });
     if (!res.ok) return null;
     const html = await res.text();
 
     if (html.includes("WatchOnInstagram")) return null;
 
-    const gqlData = extractGqlData(html);
-    if (gqlData) {
-      const item = gqlData.shortcode_media ?? gqlData.xdt_shortcode_media;
+    const jsons = extractAllJsonFromHtml(html);
+    for (const json of jsons) {
+      const item = findItemDeep(json);
       if (item) {
         const parsed = parseGqlItem(item, postId);
         if (parsed) return parsed;
@@ -116,13 +170,17 @@ async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
     let caption = (captionMatch?.[1] ?? "").replace(/<[^>]+>/g, "").trim();
 
     if (username && caption.startsWith(username)) caption = caption.slice(username.length).trim();
-    caption = caption.replace(/View all \d+ comments|Add a comment\.\.\.$/i, "").trim();
+    caption = caption.replace(/View all [\d,]+ comments|Add a comment\.\.\.$/i, "").trim();
 
     let isVideo = false;
     let mediaUrl = "";
     let thumbnailUrl: string | undefined = undefined;
 
-    const videoUrlMatch = html.match(/"video_url"\s*:\s*"([^"]+)"/);
+    const videoUrlMatch =
+      html.match(/"video_url"\s*:\s*"([^"]+)"/) ||
+      html.match(/\\"video_url\\"\s*:\s*\\"([^"\\]+)\\"/) ||
+      html.match(/"video_versions"[\s\S]*?"url"\s*:\s*"([^"]+)"/);
+
     const videoElementMatch = html.match(/class="EmbeddedMediaVideo"[^>]*src="([^"]+)"/) || html.match(/<video[^>]*src="([^"]+)"/);
 
     if (videoUrlMatch) {
@@ -146,9 +204,15 @@ async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
       const posterMatch = html.match(/poster="([^"]+)"/);
       if (posterMatch) thumbnailUrl = posterMatch[1].replace(/&amp;/g, "&");
     } else {
-      const imgMatch = html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/) || html.match(/<img[^>]*src="([^"]+)"/);
-      if (imgMatch) {
-        mediaUrl = imgMatch[1].replace(/&amp;/g, "&");
+      const mp4Match = html.match(/https?:\/\/[^"'\s<>]+?\.mp4[^"'\s<>]*/i);
+      if (mp4Match) {
+        isVideo = true;
+        mediaUrl = mp4Match[0].replace(/\\/g, "").replace(/&amp;/g, "&");
+      } else {
+        const imgMatch = html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/) || html.match(/<img[^>]*src="([^"]+)"/);
+        if (imgMatch) {
+          mediaUrl = imgMatch[1].replace(/&amp;/g, "&");
+        }
       }
     }
 
@@ -290,7 +354,7 @@ instagramRouter.get("/videos/:id/:n/video.mp4", async c => {
     const videoRes = await fetch(mediaUrl, {
       headers: {
         Referer: "https://www.instagram.com/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
         Accept: "*/*",
         "sec-fetch-site": "cross-site",
       },

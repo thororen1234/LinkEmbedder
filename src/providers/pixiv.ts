@@ -20,7 +20,7 @@ async function fetchPixivData(id: string): Promise<PixivArtwork | null> {
   if (cached) return cached;
   try {
     const res = await fetch(`https://www.pixiv.net/ajax/illust/${id}`, {
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "en-US,en;q=0.5" },
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36", "Accept-Language": "en-US,en;q=0.5" },
     });
     if (!res.ok) return null;
     const data = (await res.json()) as PixivData;
@@ -33,7 +33,7 @@ async function fetchPixivData(id: string): Promise<PixivArtwork | null> {
 async function fetchUgoiraMeta(id: string): Promise<UgoiraMeta["body"] | null> {
   try {
     const res = await fetch(`https://www.pixiv.net/ajax/illust/${id}/ugoira_meta`, {
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "en-US,en;q=0.5" },
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36)", "Accept-Language": "en-US,en;q=0.5" },
     });
     if (!res.ok) return null;
     const data = (await res.json()) as UgoiraMeta;

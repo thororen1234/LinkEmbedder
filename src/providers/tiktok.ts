@@ -5,8 +5,8 @@ import { tiktokCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 import { createMosaic } from "../utils/image.js";
 
-const TIKTOK_DOWNLOAD_UA = "Mozilla/5.0 (compatible; LinkEmbedder/1.0)";
 const TIKTOK_COLOR = "#010101";
+const TIKTOK_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
 
 interface TikTokAuthor { nickname?: string; uniqueId?: string; avatarThumb?: string; }
 interface TikTokBitrateInfo { PlayAddr?: { UrlList?: string[]; DataSize?: string; }; CodecType?: string; }
@@ -67,7 +67,7 @@ function absorbSetCookies(headers: Headers): void {
 
 function getTiktokHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+    "User-Agent": TIKTOK_UA,
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
     Referer: "https://www.tiktok.com/",
@@ -80,9 +80,10 @@ function getTiktokHeaders(): Record<string, string> {
 }
 
 const VIDEO_USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+  TIKTOK_UA,
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Safari/605.1.15",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.100.0",
+  "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 ];
 
 async function resolveShortLink(videoId: string): Promise<URL | null> {
@@ -255,9 +256,10 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
   }
 
   const range = c.req.header("range");
+  const cookieHeader = tiktokCookieJar.header();
 
   const initialHeaders: Record<string, string> = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/134.0.0.0",
+    "User-Agent": TIKTOK_UA,
     Accept: "*/*",
     "Accept-Encoding": "identity",
     "sec-fetch-site": "cross-site",
@@ -267,10 +269,16 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
   };
 
   const redirectHeaders: Record<string, string> = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/134.0.0.0",
+    "User-Agent": TIKTOK_UA,
     Accept: "*/*",
     "Accept-Encoding": "identity",
+    Referer: "https://www.tiktok.com/",
   };
+
+  if (cookieHeader) {
+    initialHeaders.Cookie = cookieHeader;
+    redirectHeaders.Cookie = cookieHeader;
+  }
 
   if (range) {
     initialHeaders.Range = range;
