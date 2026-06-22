@@ -79,8 +79,44 @@ async function fetchTweet(id: string): Promise<SyndicationTweet | null> {
   } catch { return null; }
 }
 
+function getCardVideo(tweet: SyndicationTweet): { url: string; width?: number; height?: number; thumb?: string; } | null {
+  const { card } = tweet;
+  if (!card?.binding_values) return null;
+
+  const bv = card.binding_values;
+  const candidateKeys = [
+    "player_stream_url",
+    "amplify_content_url",
+    "video_url",
+    "player_url",
+  ];
+
+  for (const key of candidateKeys) {
+    const val = bv[key]?.string_value;
+    if (val && /^https?:\/\//.test(val)) {
+      const widthStr = bv.player_width?.string_value;
+      const heightStr = bv.player_height?.string_value;
+      const thumb = bv.thumbnail_image_large?.string_value
+        ?? bv.thumbnail_image_original?.string_value
+        ?? bv.thumbnail_image?.string_value;
+      return {
+        url: val,
+        width: widthStr ? parseInt(widthStr, 10) : undefined,
+        height: heightStr ? parseInt(heightStr, 10) : undefined,
+        thumb,
+      };
+    }
+  }
+
+  if (card.name && /player|amplify/i.test(card.name)) {
+    console.log(`[twitter] card.name="${card.name}" has no recognized video URL key. Available binding_values keys: ${Object.keys(bv).join(", ")}`);
+  }
+
+  return null;
+}
+
 function getBestVideo(tweet: SyndicationTweet): { url: string; width?: number; height?: number; thumb?: string; } | null {
-  if (tweet.video) {
+  if (tweet.video?.url) {
     const ar = tweet.video.aspectRatio;
     return { url: tweet.video.url, width: ar?.[0] ? ar[0] * 100 : undefined, height: ar?.[1] ? ar[1] * 100 : undefined, thumb: tweet.video.poster };
   }
@@ -96,7 +132,7 @@ function getBestVideo(tweet: SyndicationTweet): { url: string; width?: number; h
       }
     }
   }
-  return null;
+  return getCardVideo(tweet);
 }
 
 function getPhotos(tweet: SyndicationTweet): Array<{ url: string; width?: number; height?: number; }> {
@@ -135,7 +171,8 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const tweetUrl = `https://x.com/${username}/status/${tweetId}`;
   const authorName = `${displayName} (@${username})`;
   const host = getOrigin(c);
-  const video = getBestVideo(tweet);
+  const rawVideo = getBestVideo(tweet);
+  const video = rawVideo?.url ? rawVideo : null;
 
   if (video && video.url && video.url.includes("video.twimg.com") && video.url.includes(".mp4")) {
     try {
@@ -199,7 +236,7 @@ twitterRouter.get("/:user/status/:id/video.mp4", async c => {
   const tweet = await fetchTweet(c.req.param("id"));
   if (!tweet) return new Response("Not found", { status: 404 });
   const video = getBestVideo(tweet);
-  if (video) return c.redirect(video.url, 302);
+  if (video?.url) return c.redirect(video.url, 302);
   return new Response("No video found", { status: 404 });
 });
 

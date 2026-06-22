@@ -70,6 +70,7 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
   } = opts;
 
   let card = twitterCard;
+  if (card === "player" && !videoUrl) card = undefined;
   if (!card) {
     if (videoUrl) card = "player";
     else if (imageUrl) card = largeImage ? "summary_large_image" : "summary_large_image";

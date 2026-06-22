@@ -61,7 +61,11 @@ function parseGqlItem(item: any, postId: string): InstaData | null {
   const nodes = sidecar?.length ? sidecar.map((e: any) => e.node) : [item];
 
   for (const node of nodes) {
-    const videoUrl = node.video_url;
+    let videoUrl = node.video_url;
+    if (!videoUrl && node.video_versions?.length) {
+      videoUrl = node.video_versions[0].url;
+    }
+
     const displayUrl = node.display_url;
     const isVideoNode = node.is_video || node.__typename?.includes("Video");
 
@@ -114,14 +118,41 @@ async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
     if (username && caption.startsWith(username)) caption = caption.slice(username.length).trim();
     caption = caption.replace(/View all \d+ comments|Add a comment\.\.\.$/i, "").trim();
 
-    const isVideo = html.includes("EmbeddedMediaVideo");
-    const mediaMatch = isVideo
-      ? html.match(/class="EmbeddedMediaVideo"[^>]*src="([^"]+)"/)
-      : html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/);
+    let isVideo = false;
+    let mediaUrl = "";
+    let thumbnailUrl: string | undefined = undefined;
 
-    if (!mediaMatch || !username) return null;
+    const videoUrlMatch = html.match(/"video_url"\s*:\s*"([^"]+)"/);
+    const videoElementMatch = html.match(/class="EmbeddedMediaVideo"[^>]*src="([^"]+)"/) || html.match(/<video[^>]*src="([^"]+)"/);
 
-    const thumbnailMatch = isVideo ? html.match(/poster="([^"]+)"/) : null;
+    if (videoUrlMatch) {
+      isVideo = true;
+      try {
+        mediaUrl = JSON.parse(`"${videoUrlMatch[1]}"`).replace(/&amp;/g, "&");
+      } catch {
+        mediaUrl = videoUrlMatch[1].replace(/\\/g, "").replace(/&amp;/g, "&");
+      }
+      const posterMatch = html.match(/"thumbnail_src"\s*:\s*"([^"]+)"/) || html.match(/"display_url"\s*:\s*"([^"]+)"/);
+      if (posterMatch) {
+        try {
+          thumbnailUrl = JSON.parse(`"${posterMatch[1]}"`).replace(/&amp;/g, "&");
+        } catch {
+          thumbnailUrl = posterMatch[1].replace(/\\/g, "").replace(/&amp;/g, "&");
+        }
+      }
+    } else if (videoElementMatch) {
+      isVideo = true;
+      mediaUrl = videoElementMatch[1].replace(/&amp;/g, "&");
+      const posterMatch = html.match(/poster="([^"]+)"/);
+      if (posterMatch) thumbnailUrl = posterMatch[1].replace(/&amp;/g, "&");
+    } else {
+      const imgMatch = html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/) || html.match(/<img[^>]*src="([^"]+)"/);
+      if (imgMatch) {
+        mediaUrl = imgMatch[1].replace(/&amp;/g, "&");
+      }
+    }
+
+    if (!mediaUrl || !username) return null;
 
     const timeMatch = html.match(/datetime="([^"]+)"/);
     let date: string | undefined;
@@ -136,8 +167,8 @@ async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
       date,
       medias: [{
         typeName: isVideo ? "GraphVideo" : "GraphImage",
-        url: mediaMatch[1].replace(/&amp;/g, "&"),
-        thumbnailUrl: thumbnailMatch?.[1]?.replace(/&amp;/g, "&")
+        url: mediaUrl,
+        thumbnailUrl
       }]
     };
   } catch { return null; }

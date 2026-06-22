@@ -5,6 +5,7 @@ import { tiktokCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 import { createMosaic } from "../utils/image.js";
 
+const TIKTOK_DOWNLOAD_UA = "Mozilla/5.0 (compatible; LinkEmbedder/1.0)";
 const TIKTOK_COLOR = "#010101";
 
 interface TikTokAuthor { nickname?: string; uniqueId?: string; avatarThumb?: string; }
@@ -149,7 +150,6 @@ async function proxyImage(url: string, c: Context): Promise<Response> {
 
 function findPlayUrl(video: TikTokVideo | undefined, hq = false): string | undefined {
   if (!video) return undefined;
-
   if (hq && video.bitrateInfo) {
     const h265Candidates: string[] = [];
     for (const b of video.bitrateInfo) {
@@ -245,10 +245,10 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
   const awemeId = c.req.param("videoId");
   tiktokCache.delete(awemeId);
 
-  const hq = c.req.query("hq") === "true" || c.req.query("quality") === "hq";
+  const hqParam = !!c.req.query("hq");
 
   const item = await fetchVideoData(awemeId);
-  const playAddrUrl = findPlayUrl(item?.video, hq);
+  const playAddrUrl = findPlayUrl(item?.video, hqParam);
 
   if (!playAddrUrl) {
     return c.redirect(`https://www.tiktok.com/@i/video/${awemeId}`, 302);
@@ -256,7 +256,7 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
 
   const range = c.req.header("range");
 
-  const upstreamHeaders: Record<string, string> = {
+  const initialHeaders: Record<string, string> = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/134.0.0.0",
     Accept: "*/*",
     "Accept-Encoding": "identity",
@@ -266,11 +266,20 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
     Origin: "https://www.tiktok.com",
   };
 
-  if (range) upstreamHeaders.Range = range;
+  const redirectHeaders: Record<string, string> = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/134.0.0.0",
+    Accept: "*/*",
+    "Accept-Encoding": "identity",
+  };
+
+  if (range) {
+    initialHeaders.Range = range;
+    redirectHeaders.Range = range;
+  }
 
   try {
     let videoRes = await fetch(playAddrUrl, {
-      headers: upstreamHeaders,
+      headers: initialHeaders,
       redirect: "manual"
     });
 
@@ -282,8 +291,13 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
     ) {
       const location = videoRes.headers.get("location");
       if (!location) break;
-      videoRes = await fetch(location, { headers: upstreamHeaders, redirect: "manual" });
+      videoRes = await fetch(location, { headers: redirectHeaders, redirect: "manual" });
       redirectHops += 1;
+    }
+
+    if (videoRes.status === 403 || videoRes.status === 401) {
+      console.log(`TikTok video proxy got ${videoRes.status} from CDN for ${awemeId} on URL: ${playAddrUrl}`);
+      return c.redirect(playAddrUrl, 302);
     }
 
     if (!videoRes.ok && videoRes.status !== 206) {
