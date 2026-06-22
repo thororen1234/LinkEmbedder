@@ -222,7 +222,7 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const oembedUrl = `${host}/twitter/oembed?user=${encodeURIComponent(authorName)}&link=${encodeURIComponent(tweetUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   if (video) {
-    return c.html(buildEmbedHtml({ description: `${text}\n${metricsStr}`, url: tweetUrl, imageUrl: video.thumb, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, color: TWITTER_COLOR, siteName: customSiteName, twitterCard: "player", oembedUrl }));
+    return c.html(buildEmbedHtml({ title: text || undefined, description: metricsStr || undefined, url: tweetUrl, imageUrl: video.thumb, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, color: TWITTER_COLOR, siteName: customSiteName, twitterCard: "player", oembedUrl }));
   }
 
   const photos = getPhotos(tweet);

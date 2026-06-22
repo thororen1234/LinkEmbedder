@@ -9,8 +9,6 @@ export interface EmbedOptions {
   videoUrl?: string;
   videoWidth?: number;
   videoHeight?: number;
-  videoContentType?: string;
-  posterUrl?: string;
   oembedUrl?: string;
   color?: string;
   siteName?: string;
@@ -51,13 +49,6 @@ function nameMeta(name: string, content: string): string {
   return `<meta name="${esc(name)}" content="${esc(content)}" />`;
 }
 
-function getVideoSizeMultiplier(width?: number, height?: number): number {
-  if (!width || !height) return 1;
-  if (width > 1920 || height > 1920) return 0.5;
-  if (width < 400 && height < 400) return 2;
-  return 1;
-}
-
 export function buildEmbedHtml(opts: EmbedOptions): string {
   const {
     title,
@@ -70,8 +61,6 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
     videoUrl,
     videoWidth,
     videoHeight,
-    videoContentType = "video/mp4",
-    posterUrl,
     oembedUrl,
     color = "#5865F2",
     siteName = "LinkEmbedder",
@@ -80,19 +69,17 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
     type,
   } = opts;
 
-  const isVideo = Boolean(videoUrl);
-
   let card = twitterCard;
   if (card === "player" && !videoUrl) card = undefined;
   if (!card) {
-    if (isVideo) card = "player";
-    else if (imageUrl) card = largeImage ? "summary_large_image" : "summary";
+    if (videoUrl) card = "player";
+    else if (imageUrl) card = largeImage ? "summary_large_image" : "summary_large_image";
     else card = "summary";
   }
 
   const metas: string[] = [
     meta("og:url", proxyUrl ?? url),
-    meta("og:type", type ?? (isVideo ? "video.other" : "website")),
+    meta("og:type", type ?? (videoUrl ? "video.other" : "website")),
     meta("og:site_name", siteName),
     meta("theme-color", color),
     nameMeta("twitter:card", card),
@@ -102,15 +89,21 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
   if (title) {
     metas.push(meta("og:title", title));
     metas.push(nameMeta("twitter:title", title));
+  } 
+  /*
+  else if (description) {
+    const fallbackTitle = "\u2800";
+    metas.push(meta("og:title", fallbackTitle));
+    metas.push(nameMeta("twitter:title", fallbackTitle));
   }
+    */
 
   if (description) {
-    metas.push(meta("description", description));
     metas.push(meta("og:description", description));
     metas.push(nameMeta("twitter:description", description));
   }
 
-  if (imageUrl && !isVideo) {
+  if (imageUrl) {
     const images = Array.isArray(imageUrl) ? imageUrl : [imageUrl];
     for (const img of images) {
       metas.push(meta("og:image", img));
@@ -120,27 +113,16 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
     if (imageHeight) metas.push(meta("og:image:height", String(imageHeight)));
   }
 
-  if (isVideo && videoUrl) {
-    const sizeMultiplier = getVideoSizeMultiplier(videoWidth, videoHeight);
-    const scaledWidth = videoWidth ? Math.round(videoWidth * sizeMultiplier) : undefined;
-    const scaledHeight = videoHeight ? Math.round(videoHeight * sizeMultiplier) : undefined;
-
-    if (scaledWidth) metas.push(nameMeta("twitter:player:width", String(scaledWidth)));
-    if (scaledHeight) metas.push(nameMeta("twitter:player:height", String(scaledHeight)));
+  if (videoUrl) {
+    if (videoWidth) metas.push(nameMeta("twitter:player:width", String(videoWidth)));
+    if (videoHeight) metas.push(nameMeta("twitter:player:height", String(videoHeight)));
     metas.push(nameMeta("twitter:player:stream", videoUrl));
-    metas.push(nameMeta("twitter:player:stream:content_type", videoContentType));
-
+    metas.push(nameMeta("twitter:player:stream:content_type", "video/mp4"));
     metas.push(meta("og:video", videoUrl));
     metas.push(meta("og:video:secure_url", videoUrl));
-    metas.push(meta("og:video:type", videoContentType));
-    if (scaledWidth) metas.push(meta("og:video:width", String(scaledWidth)));
-    if (scaledHeight) metas.push(meta("og:video:height", String(scaledHeight)));
-
-    const poster = posterUrl ?? (Array.isArray(imageUrl) ? imageUrl[0] : imageUrl);
-    if (poster) {
-      metas.push(meta("og:image", poster));
-      metas.push(nameMeta("twitter:image", poster));
-    }
+    metas.push(meta("og:video:type", "video/mp4"));
+    if (videoWidth) metas.push(meta("og:video:width", String(videoWidth)));
+    if (videoHeight) metas.push(meta("og:video:height", String(videoHeight)));
   }
 
   if (oembedUrl) {
