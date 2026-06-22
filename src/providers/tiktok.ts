@@ -5,7 +5,6 @@ import { tiktokCache } from "../utils/cache.js";
 import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 import { createMosaic } from "../utils/image.js";
 
-const TIKTOK_DOWNLOAD_UA = "Mozilla/5.0 (compatible; LinkEmbedder/1.0)";
 const TIKTOK_COLOR = "#010101";
 
 interface TikTokAuthor { nickname?: string; uniqueId?: string; avatarThumb?: string; }
@@ -24,17 +23,60 @@ interface TikTokStats { diggCount?: number; commentCount?: number; playCount?: n
 interface TikTokItem {
   id?: string; desc?: string; author?: TikTokAuthor; video?: TikTokVideo;
   imagePost?: { images?: Array<{ imageURL?: { urlList?: string[]; }; }>; };
-  stats?: TikTokStats; isContentClassified?: boolean;
+  stats?: TikTokStats; isContentClassified?: boolean; createTime?: number | string;
 }
 
-const TIKTOK_HEADERS: Record<string, string> = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "Accept-Language": "en-US,en;q=0.9",
-  Referer: "https://www.tiktok.com/",
-  "sec-fetch-site": "same-site",
-  "sec-fetch-mode": "cors",
-};
+class CookieJar {
+  private cookies = new Map<string, string>();
+
+  absorb(setCookieHeader: string | null): void {
+    if (!setCookieHeader) return;
+    const parts = setCookieHeader.split(/,(?=\s*[^;,\s]+=)/);
+    for (const part of parts) {
+      const firstSegment = part.split(";")[0]?.trim();
+      if (!firstSegment) continue;
+      const eqIdx = firstSegment.indexOf("=");
+      if (eqIdx === -1) continue;
+      const name = firstSegment.slice(0, eqIdx).trim();
+      const value = firstSegment.slice(eqIdx + 1).trim();
+      if (name) this.cookies.set(name, value);
+    }
+  }
+
+  header(): string {
+    return Array.from(this.cookies.entries()).map(([k, v]) => `${k}=${v}`).join("; ");
+  }
+
+  get size(): number {
+    return this.cookies.size;
+  }
+}
+
+const tiktokCookieJar = new CookieJar();
+
+function absorbSetCookies(headers: Headers): void {
+  const { getSetCookie } = (headers as any);
+  if (typeof getSetCookie === "function") {
+    const values: string[] = getSetCookie.call(headers);
+    for (const v of values) tiktokCookieJar.absorb(v);
+  } else {
+    tiktokCookieJar.absorb(headers.get("set-cookie"));
+  }
+}
+
+function getTiktokHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    Referer: "https://www.tiktok.com/",
+    "sec-fetch-site": "same-site",
+    "sec-fetch-mode": "cors",
+  };
+  const cookieHeader = tiktokCookieJar.header();
+  if (cookieHeader) headers.Cookie = cookieHeader;
+  return headers;
+}
 
 const VIDEO_USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
@@ -48,6 +90,7 @@ async function resolveShortLink(videoId: string): Promise<URL | null> {
       headers: { "User-Agent": VIDEO_USER_AGENTS[0] },
       redirect: "manual",
     });
+    absorbSetCookies(res.headers);
     const location = res.headers.get("location") ?? res.headers.get("Location");
     if (!location) return null;
     return new URL(location);
@@ -72,8 +115,9 @@ async function fetchVideoData(awemeId: string): Promise<TikTokItem | null> {
 
   try {
     const res = await fetch(`https://www.tiktok.com/@i/video/${awemeId}`, {
-      headers: TIKTOK_HEADERS
+      headers: getTiktokHeaders()
     });
+    absorbSetCookies(res.headers);
     if (res.ok) {
       const html = await res.text();
       const json = extractJsonFromScript(html, "__UNIVERSAL_DATA_FOR_REHYDRATION__") as any;
@@ -103,31 +147,51 @@ async function proxyImage(url: string, c: Context): Promise<Response> {
   } catch { return c.redirect(url, 302); }
 }
 
-function findPlayUrl(video: TikTokVideo | undefined): string | undefined {
+function findPlayUrl(video: TikTokVideo | undefined, hq = false): string | undefined {
   if (!video) return undefined;
 
-  const candidates: string[] = [];
-
-  if (typeof video.playAddr === "string") {
-    candidates.push(video.playAddr);
-  } else if (video.playAddr?.urlList?.[0]) {
-    candidates.push(video.playAddr.urlList[0]);
+  if (hq && video.bitrateInfo) {
+    const h265Candidates: string[] = [];
+    for (const b of video.bitrateInfo) {
+      if (b.CodecType?.toLowerCase().includes("h265") && b.PlayAddr?.UrlList?.[0]) {
+        h265Candidates.push(b.PlayAddr.UrlList[0]);
+      }
+    }
+    for (const url of h265Candidates) {
+      if (url.includes("/aweme/v1/play/")) return url;
+    }
+    if (h265Candidates[0]) return h265Candidates[0];
   }
 
-  if (video.playAddrStruct?.urlList?.[0]) candidates.push(video.playAddrStruct.urlList[0]);
-  if (video.PlayAddrStruct?.UrlList?.[0]) candidates.push(video.PlayAddrStruct.UrlList[0]);
+  const preferredCandidates: string[] = [];
+  if (video.playAddrStruct?.urlList?.[0]) preferredCandidates.push(video.playAddrStruct.urlList[0]);
+  if (video.PlayAddrStruct?.UrlList?.[0]) preferredCandidates.push(video.PlayAddrStruct.UrlList[0]);
+
+  for (const url of preferredCandidates) {
+    if (url.includes("/aweme/v1/play/")) return url;
+  }
+  if (preferredCandidates[0]) return preferredCandidates[0];
+
+  const fallbackCandidates: string[] = [];
+
+  if (typeof video.playAddr === "string") {
+    fallbackCandidates.push(video.playAddr);
+  } else if (video.playAddr?.urlList?.[0]) {
+    fallbackCandidates.push(video.playAddr.urlList[0]);
+  }
 
   if (video.bitrateInfo) {
     for (const b of video.bitrateInfo) {
-      if (b.PlayAddr?.UrlList?.[0]) candidates.push(b.PlayAddr.UrlList[0]);
+      if (b.CodecType?.toLowerCase().includes("h265")) continue;
+      if (b.PlayAddr?.UrlList?.[0]) fallbackCandidates.push(b.PlayAddr.UrlList[0]);
     }
   }
 
-  for (const url of candidates) {
+  for (const url of fallbackCandidates) {
     if (url.includes("/aweme/v1/play/")) return url;
   }
 
-  return candidates[0];
+  return fallbackCandidates[0];
 }
 
 export const tiktokRouter = new Hono();
@@ -181,8 +245,10 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
   const awemeId = c.req.param("videoId");
   tiktokCache.delete(awemeId);
 
+  const hq = c.req.query("hq") === "true" || c.req.query("quality") === "hq";
+
   const item = await fetchVideoData(awemeId);
-  const playAddrUrl = findPlayUrl(item?.video);
+  const playAddrUrl = findPlayUrl(item?.video, hq);
 
   if (!playAddrUrl) {
     return c.redirect(`https://www.tiktok.com/@i/video/${awemeId}`, 302);
@@ -208,11 +274,16 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
       redirect: "manual"
     });
 
-    if (videoRes.status === 301 || videoRes.status === 302) {
+    let redirectHops = 0;
+    const MAX_REDIRECT_HOPS = 5;
+    while (
+      (videoRes.status === 301 || videoRes.status === 302 || videoRes.status === 303 || videoRes.status === 307 || videoRes.status === 308) &&
+      redirectHops < MAX_REDIRECT_HOPS
+    ) {
       const location = videoRes.headers.get("location");
-      if (location) {
-        videoRes = await fetch(location, { headers: upstreamHeaders, redirect: "manual" });
-      }
+      if (!location) break;
+      videoRes = await fetch(location, { headers: upstreamHeaders, redirect: "manual" });
+      redirectHops += 1;
     }
 
     if (!videoRes.ok && videoRes.status !== 206) {
@@ -276,6 +347,9 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
   const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
   const isDirect = dParam !== undefined;
 
+  const hqParam = !!c.req.query("hq");
+  const hqQuery = hqParam ? "?hq=true" : "";
+
   const imgIndexParam = c.req.query("img_index") ?? c.req.query("index");
   if (imgIndexParam !== undefined && embedIndex === -1) {
     embedIndex = parseInt(imgIndexParam, 10) - 1;
@@ -299,10 +373,13 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
   const postUrl = `https://www.tiktok.com/@${username}/video/${awemeId}`;
   const host = getOrigin(c);
   const isVideo = !item.imagePost?.images?.length;
-  const playUrl = findPlayUrl(item.video);
+  const playUrl = findPlayUrl(item.video, hqParam);
+
+  const dateStr = item.createTime ? new Date(Number(item.createTime) * 1000).toLocaleDateString() : undefined;
+  const embedTitle = dateStr ? `Published ${dateStr}` : undefined;
 
   if (isDirect) {
-    if (isVideo && playUrl) return c.redirect(`${host}/tiktok/play/${awemeId}/video.mp4`, 302);
+    if (isVideo && playUrl) return c.redirect(`${host}/tiktok/play/${awemeId}/video.mp4${hqQuery}`, 302);
     if (item.imagePost?.images?.length) return c.redirect(`${host}/tiktok/images/${awemeId}/${Math.max(1, embedIndex + 1)}`, 302);
     return c.redirect(postUrl, 302);
   }
@@ -313,18 +390,19 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
     const { images } = item.imagePost;
     if (embedIndex >= 0) {
       const idx = Math.min(embedIndex, images.length - 1);
-      return c.html(buildEmbedHtml({ description, url: postUrl, proxyUrl: c.req.url, imageUrl: `${host}/tiktok/images/${awemeId}/${idx + 1}`, color: TIKTOK_COLOR, siteName: "TikTok", largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ title: embedTitle, description, url: postUrl, proxyUrl: c.req.url, imageUrl: `${host}/tiktok/images/${awemeId}/${idx + 1}`, color: TIKTOK_COLOR, siteName: "TikTok", largeImage: true, oembedUrl }));
     } else if (images.length > 1) {
-      return c.html(buildEmbedHtml({ description, url: postUrl, proxyUrl: c.req.url, imageUrl: `${host}/tiktok/grid/${awemeId}`, color: TIKTOK_COLOR, siteName: "TikTok", largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ title: embedTitle, description, url: postUrl, proxyUrl: c.req.url, imageUrl: `${host}/tiktok/grid/${awemeId}`, color: TIKTOK_COLOR, siteName: "TikTok", largeImage: true, oembedUrl }));
     } else {
-      return c.html(buildEmbedHtml({ description, url: postUrl, proxyUrl: c.req.url, imageUrl: `${host}/tiktok/images/${awemeId}/1`, color: TIKTOK_COLOR, siteName: "TikTok", largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ title: embedTitle, description, url: postUrl, proxyUrl: c.req.url, imageUrl: `${host}/tiktok/images/${awemeId}/1`, color: TIKTOK_COLOR, siteName: "TikTok", largeImage: true, oembedUrl }));
     }
   }
 
   const hasCover = !!(item.video?.cover ?? item.author?.avatarThumb);
-  const videoUrl = playUrl ? `${host}/tiktok/play/${awemeId}/video.mp4` : postUrl;
+  const videoUrl = playUrl ? `${host}/tiktok/play/${awemeId}/video.mp4${hqQuery}` : postUrl;
 
   return c.html(buildEmbedHtml({
+    title: embedTitle,
     description,
     url: postUrl,
     proxyUrl: c.req.url,

@@ -7,6 +7,35 @@ import { createMosaic } from "../utils/image.js";
 
 const TWITTER_COLOR = "#1D9BF0";
 const SYNDICATION_BASE = "https://cdn.syndication.twimg.com/tweet-result";
+const BASE36_DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+function baseConversion(x: number, base: number): string {
+  let result = "";
+  let i = Math.trunc(x);
+  while (i > 0) {
+    result = BASE36_DIGITS[i % base] + result;
+    i = Math.floor(i / base);
+  }
+  if (Math.trunc(x) !== x) {
+    result += ".";
+    let frac = x - Math.trunc(x);
+    let d = 0;
+    while (frac !== Math.trunc(frac)) {
+      result += BASE36_DIGITS[Math.trunc((frac * base) % base)];
+      frac *= base;
+      d += 1;
+      if (d >= 8) break;
+    }
+  }
+  return result;
+}
+
+function calcSyndicationToken(idStr: string): string {
+  const id = (Number(idStr) / 1000000000000000) * Math.PI;
+  const o = baseConversion(id, Math.pow(6, 2));
+  const c = o.replace(/0/g, "").replace(".", "");
+  return c === "" ? "0" : c;
+}
 
 interface SyndicationMedia {
   type: "photo" | "video" | "animated_gif";
@@ -39,7 +68,8 @@ async function fetchTweet(id: string): Promise<SyndicationTweet | null> {
   const cached = twitterCache.get(id) as SyndicationTweet | undefined;
   if (cached) return cached;
   try {
-    const res = await fetch(`${SYNDICATION_BASE}?id=${encodeURIComponent(id)}&lang=en&token=0`, {
+    const token = calcSyndicationToken(id);
+    const res = await fetch(`${SYNDICATION_BASE}?id=${encodeURIComponent(id)}&lang=en&token=${token}`, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Discordbot/2.0)", Accept: "application/json" },
     });
     if (!res.ok) return null;
@@ -107,7 +137,7 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   const host = getOrigin(c);
   const video = getBestVideo(tweet);
 
-  if (video && video.url.includes("video.twimg.com") && video.url.includes(".mp4")) {
+  if (video && video.url && video.url.includes("video.twimg.com") && video.url.includes(".mp4")) {
     try {
       const urlObj = new URL(video.url);
       const cleanPath = urlObj.pathname.replace(".mp4", "");

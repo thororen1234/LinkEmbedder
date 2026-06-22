@@ -8,7 +8,7 @@ import { createMosaic } from "../utils/image.js";
 const INSTA_COLOR = "#E1306C";
 
 interface InstaMedia { typeName: string; url: string; thumbnailUrl?: string; }
-interface InstaData { postId: string; username: string; caption: string; medias: InstaMedia[]; }
+interface InstaData { postId: string; username: string; caption: string; medias: InstaMedia[]; date?: string; }
 
 const GQL_HEADERS: Record<string, string> = {
   Accept: "*/*",
@@ -77,7 +77,13 @@ function parseGqlItem(item: any, postId: string): InstaData | null {
   }
 
   if (!medias.length) return null;
-  return { postId, username, caption, medias };
+
+  let date: string | undefined;
+  if (item.taken_at_timestamp) {
+    date = new Date(item.taken_at_timestamp * 1000).toLocaleDateString();
+  }
+
+  return { postId, username, caption, medias, date };
 }
 
 async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
@@ -117,10 +123,17 @@ async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
 
     const thumbnailMatch = isVideo ? html.match(/poster="([^"]+)"/) : null;
 
+    const timeMatch = html.match(/datetime="([^"]+)"/);
+    let date: string | undefined;
+    if (timeMatch?.[1]) {
+      date = new Date(timeMatch[1]).toLocaleDateString();
+    }
+
     return {
       postId,
       username,
       caption,
+      date,
       medias: [{
         typeName: isVideo ? "GraphVideo" : "GraphImage",
         url: mediaMatch[1].replace(/&amp;/g, "&"),
@@ -316,6 +329,7 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
 
   if (isVideo) {
     return c.html(buildEmbedHtml({
+      title: data.date ? `Published ${data.date}` : undefined,
       description,
       url: originalUrl,
       proxyUrl: c.req.url,
@@ -332,6 +346,7 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
 
   if (isGrid) {
     return c.html(buildEmbedHtml({
+      title: data.date ? `Published ${data.date}` : undefined,
       description,
       url: originalUrl,
       proxyUrl: c.req.url,
@@ -344,6 +359,7 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
   }
 
   return c.html(buildEmbedHtml({
+    title: data.date ? `Published ${data.date}` : undefined,
     description,
     url: originalUrl,
     proxyUrl: c.req.url,

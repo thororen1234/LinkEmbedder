@@ -49,6 +49,8 @@ For posts containing multiple images (e.g. a Twitter thread with 4 photos, an In
 - **In an embed:** Bypasses generating a grid layout and instead embeds only the specified image. `https://your-host/twitter/user/status/123?img_index=2`
 - **With direct redirect (`?d=1`):** Redirects straight to the raw image file at the specified index. `https://your-host/ig/p/123?d=1&img_index=3`
 
+- **TikTok only (`?hq=1`):** Redirects to the HQ H.265 video file.
+
 | Platform | Path prefix | Auth needed? | How it fetches data |
 |---|---|---|---|
 | Twitter / X | `/twitter/`, `/x/` | None | Public syndication API |
