@@ -7,10 +7,17 @@ import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 
 const REDDIT_COLOR = "#FF4500";
 
+function formatNumber(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return n.toString();
+}
+
 interface RedditPost {
   subreddit: string; title: string; author: string; permalink: string;
   selftext?: string; post_hint?: string; url?: string; domain?: string;
   is_reddit_media_domain?: boolean;
+  ups?: number; num_comments?: number; created_utc?: number;
   media?: { reddit_video?: { fallback_url: string; width: number; height: number; has_audio?: boolean; }; };
   secure_media?: { reddit_video?: { fallback_url: string; width: number; height: number; has_audio?: boolean; }; };
   preview?: { images?: Array<{ source?: { url: string; width: number; height: number; }; }>; };
@@ -18,10 +25,6 @@ interface RedditPost {
   media_metadata?: Record<string, { s?: { u: string; x: number; y: number; }; }>;
   crosspost_parent_list?: RedditPost[];
   thumbnail?: string; thumbnail_width?: number; thumbnail_height?: number;
-  poll_data?: {
-    options?: Array<{ text: string; vote_count?: number; }>;
-    total_vote_count?: number;
-  };
 }
 
 async function fetchRedditPost(permalink: string): Promise<RedditPost | null> {
@@ -81,11 +84,29 @@ async function handlePost(permalink: string, c: Context): Promise<Response> {
   const effective = post.crosspost_parent_list?.[0] ?? post;
   const authorLabel = `u/${post.author} on r/${post.subreddit}`;
   const host = getOrigin(c);
-  const desc = post.selftext?.trim() || post.title;
-  const fullDesc = desc;
+
+  const comments = effective.num_comments ?? 0;
+  const ups = effective.ups ?? 0;
+  const metricsArr = [];
+  if (comments > 0) metricsArr.push(`💬 ${formatNumber(comments)}`);
+  if (ups > 0) metricsArr.push(`❤️ ${formatNumber(ups)}`);
+
+  const textBody = post.selftext?.trim() || "";
+  let fullDesc = post.title + (textBody ? `\n\n${textBody}` : "");
+  if (metricsArr.length > 0) fullDesc += `\n\n${metricsArr.join(" ")}`;
+
+  let dateStr = "";
+  if (effective.created_utc) {
+    try {
+      const d = new Date(effective.created_utc * 1000);
+      dateStr = ` • ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+    } catch { }
+  }
+  const customSiteName = `Reddit${dateStr}`;
+
   const vid = effective.media?.reddit_video ?? effective.secure_media?.reddit_video;
   const isVideo = vid || effective.post_hint === "hosted:video";
-  const oembedUrl = `${host}/reddit/oembed?title=${encodeURIComponent(post.title)}&url=${encodeURIComponent(originalUrl)}&type=${isVideo ? "video" : "link"}`;
+  const oembedUrl = `${host}/reddit/oembed?title=${encodeURIComponent(post.title)}&url=${encodeURIComponent(originalUrl)}&type=${isVideo ? "video" : "link"}&provider=${encodeURIComponent(customSiteName)}`;
 
   const imgIndexParam = c.req.query("img_index") ?? c.req.query("index");
   const embedIndex = imgIndexParam ? parseInt(imgIndexParam, 10) - 1 : -1;
@@ -93,10 +114,7 @@ async function handlePost(permalink: string, c: Context): Promise<Response> {
   if (isDirect) {
     if (isVideo) return c.redirect(`${host}/reddit/video${permalink}`, 302);
     const gallery = getGalleryImages(effective);
-    if (gallery.length > 0) {
-      const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, gallery.length - 1));
-      return c.redirect(gallery[idx].url, 302);
-    }
+    if (gallery.length > 0) return c.redirect(gallery[Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, gallery.length - 1))].url, 302);
     const preview = getPreviewImage(effective);
     if (preview) return c.redirect(preview.url, 302);
     return c.redirect(originalUrl, 302);
@@ -104,35 +122,32 @@ async function handlePost(permalink: string, c: Context): Promise<Response> {
 
   if (isVideo) {
     const thumb = getPreviewImage(effective);
-    const videoRoute = `${host}/reddit/video${permalink}`;
-    return c.html(buildEmbedHtml({ title: authorLabel, description: post.title + "\n\n" + fullDesc, url: originalUrl, videoUrl: videoRoute, videoWidth: vid?.width ?? 1280, videoHeight: vid?.height ?? 720, imageUrl: thumb?.url, color: REDDIT_COLOR, siteName: "Reddit", twitterCard: "player", oembedUrl }));
+    return c.html(buildEmbedHtml({ title: authorLabel, description: fullDesc, url: originalUrl, videoUrl: `${host}/reddit/video${permalink}`, videoWidth: vid?.width ?? 1280, videoHeight: vid?.height ?? 720, imageUrl: thumb?.url, color: REDDIT_COLOR, siteName: customSiteName, twitterCard: "player", oembedUrl }));
   }
 
   const gallery = getGalleryImages(effective);
   if (gallery.length > 1) {
-    const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, gallery.length - 1));
-    const first = gallery[idx];
-    return c.html(buildEmbedHtml({ title: authorLabel, description: post.title + "\n\n" + fullDesc, url: originalUrl, imageUrl: first.url, imageWidth: first.width, imageHeight: first.height, color: REDDIT_COLOR, siteName: "Reddit", largeImage: true, oembedUrl }));
-  }
-
-  if (effective.post_hint === "image" || effective.is_reddit_media_domain) {
-    const preview = getPreviewImage(effective);
-    return c.html(buildEmbedHtml({ title: authorLabel, description: post.title + "\n\n" + fullDesc, url: originalUrl, imageUrl: effective.url ?? preview?.url, imageWidth: preview?.width, imageHeight: preview?.height, color: REDDIT_COLOR, siteName: "Reddit", largeImage: true, oembedUrl }));
+    const first = gallery[Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, gallery.length - 1))];
+    return c.html(buildEmbedHtml({ title: authorLabel, description: fullDesc, url: originalUrl, imageUrl: first.url, imageWidth: first.width, imageHeight: first.height, color: REDDIT_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
   }
 
   const preview = getPreviewImage(effective);
-  if (preview) {
-    return c.html(buildEmbedHtml({ title: authorLabel, description: post.title + "\n\n" + fullDesc, url: originalUrl, imageUrl: preview.url, imageWidth: preview.width, imageHeight: preview.height, color: REDDIT_COLOR, siteName: "Reddit", oembedUrl }));
+  if (effective.post_hint === "image" || effective.is_reddit_media_domain) {
+    return c.html(buildEmbedHtml({ title: authorLabel, description: fullDesc, url: originalUrl, imageUrl: effective.url ?? preview?.url, imageWidth: preview?.width, imageHeight: preview?.height, color: REDDIT_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
   }
 
-  return c.html(buildEmbedHtml({ title: authorLabel, description: post.title + (fullDesc !== post.title ? "\n\n" + fullDesc : ""), url: originalUrl, color: REDDIT_COLOR, siteName: "Reddit", oembedUrl }));
+  if (preview) {
+    return c.html(buildEmbedHtml({ title: authorLabel, description: fullDesc, url: originalUrl, imageUrl: preview.url, imageWidth: preview.width, imageHeight: preview.height, color: REDDIT_COLOR, siteName: customSiteName, oembedUrl }));
+  }
+
+  return c.html(buildEmbedHtml({ title: authorLabel, description: fullDesc, url: originalUrl, color: REDDIT_COLOR, siteName: customSiteName, oembedUrl }));
 }
 
 export const redditRouter = new Hono();
 
 redditRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: (q.type as any) || "link", author_name: q.title, author_url: q.url, provider_name: "LinkEmbedder / Reddit" }));
+  return c.json(buildOEmbed({ type: (q.type as any) || "link", author_name: q.title, author_url: q.url, provider_name: q.provider ?? "LinkEmbedder / Reddit" }));
 });
 
 redditRouter.get("/video/*", async c => {

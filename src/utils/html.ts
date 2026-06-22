@@ -86,10 +86,9 @@ export function buildEmbedHtml(opts: EmbedOptions): string {
     nameMeta("twitter:site", siteName),
   ];
 
-  if (title) {
-    metas.push(meta("og:title", title));
-    metas.push(nameMeta("twitter:title", title));
-  }
+  const fallbackTitle = "\u200B";
+  metas.push(meta("og:title", title ?? fallbackTitle));
+  metas.push(nameMeta("twitter:title", title ?? fallbackTitle));
 
   if (description) {
     metas.push(meta("og:description", description));

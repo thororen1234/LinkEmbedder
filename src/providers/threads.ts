@@ -7,12 +7,19 @@ import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 const THREADS_COLOR = "#000000";
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
+function formatNumber(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return n.toString();
+}
+
 interface ThreadsInfo {
   username: string;
   description: string;
   images: string[];
   video?: string;
   oembedStat: string;
+  likes?: number;
 }
 
 function getPostId(shortcode: string): string {
@@ -74,6 +81,7 @@ async function fetchThreadsInfo(shortcode: string): Promise<ThreadsInfo | null> 
     const { username } = post.user;
 
     const description = post.caption?.text || "";
+    const likes = post.like_count ?? 0;
     const oembedStat = "Threads";
 
     const images: string[] = [];
@@ -90,7 +98,7 @@ async function fetchThreadsInfo(shortcode: string): Promise<ThreadsInfo | null> 
       images.push(post.image_versions2.candidates[0].url);
     }
 
-    const info: ThreadsInfo = { username, description: description.slice(0, 500), images, video, oembedStat };
+    const info: ThreadsInfo = { username, description: description.slice(0, 500), images, video, oembedStat, likes };
     threadsCache.set(shortcode, info);
     return info;
   } catch { return null; }
@@ -123,11 +131,18 @@ async function handleThreadsEmbed(c: Context, user: string, shortcode: string, e
     return c.redirect(originalUrl, 302);
   }
 
-  const oembedUrl = `${host}/threads/oembed?title=${encodeURIComponent(info.oembedStat)}&author=${encodeURIComponent("@" + info.username)}&url=${encodeURIComponent(originalUrl)}`;
+  const customSiteName = "Threads";
+  const oembedUrl = `${host}/threads/oembed?title=${encodeURIComponent(info.oembedStat)}&author=${encodeURIComponent("@" + info.username)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
+
+  const metricsArr = [];
+  if (info.likes && info.likes > 0) metricsArr.push(`❤️ ${formatNumber(info.likes)}`);
+
+  let { description } = info;
+  if (metricsArr.length > 0) description = description ? `${description}\n\n${metricsArr.join(" ")}` : metricsArr.join(" ");
 
   if (info.images.length > 1 && embedIndex < 0) {
     const imageUrl = `${host}/threads/grid/${shortcode}`;
-    return c.html(buildEmbedHtml({ title: `@${info.username} on Threads`, description: info.description, url: originalUrl, imageUrl, color: THREADS_COLOR, siteName: "Threads", largeImage: true, oembedUrl }));
+    return c.html(buildEmbedHtml({ title: `@${info.username} on Threads`, description, url: originalUrl, imageUrl, color: THREADS_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
   }
 
   const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, info.images.length - 1));
@@ -135,14 +150,14 @@ async function handleThreadsEmbed(c: Context, user: string, shortcode: string, e
 
   return c.html(buildEmbedHtml({
     title: `@${info.username} on Threads`,
-    description: info.description,
+    description,
     url: originalUrl,
     imageUrl: selectedImage,
     videoUrl: info.video,
     videoWidth: info.video ? 720 : undefined,
     videoHeight: info.video ? 1280 : undefined,
     color: THREADS_COLOR,
-    siteName: "Threads",
+    siteName: customSiteName,
     twitterCard: info.video ? "player" : "summary_large_image",
     largeImage: !!selectedImage,
     oembedUrl
@@ -153,7 +168,7 @@ export const threadsRouter = new Hono();
 
 threadsRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "link", title: q.title, author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / Threads" }));
+  return c.json(buildOEmbed({ type: "link", title: q.title, author_name: q.author, author_url: q.url, provider_name: q.provider ?? "LinkEmbedder / Threads" }));
 });
 
 threadsRouter.get("/grid/:shortcode", async c => {

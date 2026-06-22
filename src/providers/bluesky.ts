@@ -8,6 +8,12 @@ import { createMosaic } from "../utils/image.js";
 const BSKY_COLOR = "#0085FF";
 const BSKY_API = "https://public.api.bsky.app/xrpc";
 
+function formatNumber(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return n.toString();
+}
+
 interface BskyImage { thumb: string; fullsize: string; aspectRatio?: { width: number; height: number; }; alt?: string; }
 interface BskyEmbed {
   $type: string;
@@ -86,13 +92,31 @@ async function handlePostEmbed(c: Context, user: string, postId: string, embedIn
 
   const displayName = post.author.displayName ?? post.author.handle;
   const authorName = `${displayName} (@${post.author.handle})`;
-  const text = post.record?.text ?? "";
-  const description = text;
   const host = getOrigin(c);
   const video = getVideo(post.embed, post.author.did);
 
-  const dateTitle = post.record?.createdAt ? `${new Date(post.record.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : "Bluesky Video";
-  const oembedUrl = `${host}/bsky/oembed?author=${encodeURIComponent(video ? description : authorName)}&provider=${encodeURIComponent(video ? authorName : "")}&url=${encodeURIComponent(originalUrl)}&ttype=${video ? "video" : "link"}`;
+  const replies = post.replyCount ?? 0;
+  const reposts = post.repostCount ?? 0;
+  const likes = post.likeCount ?? 0;
+
+  const metricsArr = [];
+  if (replies > 0) metricsArr.push(`💬 ${formatNumber(replies)}`);
+  if (reposts > 0) metricsArr.push(`🔁 ${formatNumber(reposts)}`);
+  if (likes > 0) metricsArr.push(`❤️ ${formatNumber(likes)}`);
+
+  let description = post.record?.text ?? "";
+  if (metricsArr.length > 0) description = description ? `${description}\n\n${metricsArr.join(" ")}` : metricsArr.join(" ");
+
+  let dateStr = "";
+  if (post.record?.createdAt) {
+    try {
+      const d = new Date(post.record.createdAt);
+      dateStr = ` • ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+    } catch { }
+  }
+  const customSiteName = `Bluesky${dateStr}`;
+
+  const oembedUrl = `${host}/bsky/oembed?author=${encodeURIComponent(video ? description : authorName)}&url=${encodeURIComponent(originalUrl)}&ttype=${video ? "video" : "link"}&provider=${encodeURIComponent(customSiteName)}`;
 
   if (isDirect) {
     if (video) return c.redirect(video.url, 302);
@@ -100,25 +124,25 @@ async function handlePostEmbed(c: Context, user: string, postId: string, embedIn
     if (images.length) return c.redirect(images[Math.max(0, embedIndex >= 0 ? Math.min(embedIndex, images.length - 1) : 0)].fullsize, 302);
   }
 
-  if (video) return c.html(buildEmbedHtml({ title: dateTitle, description, url: originalUrl, videoUrl: video.url, videoWidth: video.width ?? 1080, videoHeight: video.height ?? 1080, imageUrl: video.thumb, color: BSKY_COLOR, siteName: "Bluesky", twitterCard: "player", oembedUrl }));
+  if (video) return c.html(buildEmbedHtml({ description, url: originalUrl, videoUrl: video.url, videoWidth: video.width ?? 1080, videoHeight: video.height ?? 1080, imageUrl: video.thumb, color: BSKY_COLOR, siteName: customSiteName, twitterCard: "player", oembedUrl }));
 
   const images = getImages(post.embed);
   if (images.length) {
     if (embedIndex >= 0) {
       const idx = Math.min(embedIndex, images.length - 1);
       const photo = images[idx];
-      return c.html(buildEmbedHtml({ description, url: originalUrl, imageUrl: photo.fullsize, imageWidth: photo.aspectRatio?.width, imageHeight: photo.aspectRatio?.height, color: BSKY_COLOR, siteName: "Bluesky", largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ description, url: originalUrl, imageUrl: photo.fullsize, imageWidth: photo.aspectRatio?.width, imageHeight: photo.aspectRatio?.height, color: BSKY_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
     } else if (images.length > 1) {
       const imageUrl = `${host}/bsky/grid/${user}/${postId}`;
-      return c.html(buildEmbedHtml({ description, url: originalUrl, imageUrl, color: BSKY_COLOR, siteName: "Bluesky", largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ description, url: originalUrl, imageUrl, color: BSKY_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
     } else {
       const first = images[0];
-      return c.html(buildEmbedHtml({ description, url: originalUrl, imageUrl: first.fullsize, imageWidth: first.aspectRatio?.width, imageHeight: first.aspectRatio?.height, color: BSKY_COLOR, siteName: "Bluesky", largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ description, url: originalUrl, imageUrl: first.fullsize, imageWidth: first.aspectRatio?.width, imageHeight: first.aspectRatio?.height, color: BSKY_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
     }
   }
 
   const ext = post.embed?.$type === "app.bsky.embed.external#view" ? post.embed.external : undefined;
-  return c.html(buildEmbedHtml({ description: description || ext?.description, url: originalUrl, imageUrl: ext?.thumb ?? post.author.avatar, color: BSKY_COLOR, siteName: "Bluesky", oembedUrl }));
+  return c.html(buildEmbedHtml({ description: description || ext?.description, url: originalUrl, imageUrl: ext?.thumb ?? post.author.avatar, color: BSKY_COLOR, siteName: customSiteName, oembedUrl }));
 }
 
 async function handleProfileEmbed(c: Context, user: string): Promise<Response> {

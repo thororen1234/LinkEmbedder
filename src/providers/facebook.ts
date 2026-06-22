@@ -47,7 +47,9 @@ async function handleFacebookEmbed(c: Context, url: string): Promise<Response> {
 
   const description = post.description || "Facebook Video";
   const host = getOrigin(c);
-  const oembedUrl = `${host}/facebook/oembed?title=${encodeURIComponent("Facebook Reels")}&url=${encodeURIComponent(post.source || url)}`;
+
+  const customSiteName = "Facebook";
+  const oembedUrl = `${host}/facebook/oembed?title=${encodeURIComponent("Facebook Reels")}&url=${encodeURIComponent(post.source || url)}&provider=${encodeURIComponent(customSiteName)}`;
 
   return c.html(buildEmbedHtml({
     title: description,
@@ -57,7 +59,7 @@ async function handleFacebookEmbed(c: Context, url: string): Promise<Response> {
     videoWidth: 720,
     videoHeight: 1280,
     color: FACEBOOK_COLOR,
-    siteName: "Facebook",
+    siteName: customSiteName,
     twitterCard: "player",
     oembedUrl
   }));
@@ -67,7 +69,7 @@ export const facebookRouter = new Hono();
 
 facebookRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "video", author_name: q.title, author_url: q.url, provider_name: "LinkEmbedder / Facebook" }));
+  return c.json(buildOEmbed({ type: "video", author_name: q.title, author_url: q.url, provider_name: q.provider ?? "LinkEmbedder / Facebook" }));
 });
 
 facebookRouter.get("/share/r/:id", c => handleFacebookEmbed(c, `https://www.facebook.com/share/r/${c.req.param("id")}`));

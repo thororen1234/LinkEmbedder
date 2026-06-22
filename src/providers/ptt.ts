@@ -12,6 +12,7 @@ interface PttPost {
   title: string;
   content: string;
   images: string[];
+  date?: string;
 }
 
 async function fetchPttPost(board: string, id: string): Promise<PttPost | null> {
@@ -31,6 +32,15 @@ async function fetchPttPost(board: string, id: string): Promise<PttPost | null> 
     const author = metaValues.eq(0).text().trim();
     const title = metaValues.eq(2).text().trim() || "No Title";
 
+    const rawDate = metaValues.eq(3).text().trim();
+    let dateStr = "";
+    if (rawDate) {
+      try {
+        const d = new Date(rawDate);
+        if (!isNaN(d.getTime())) dateStr = ` • ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+      } catch { }
+    }
+
     const mainContent = $("#main-content");
     mainContent.find("div, span").remove();
     let content = mainContent.text().trim();
@@ -47,7 +57,7 @@ async function fetchPttPost(board: string, id: string): Promise<PttPost | null> 
 
     content = content.replace(imageRegex, "").replace(/\n{2,}/g, "\n").trim();
 
-    const post: PttPost = { author, title, content: content.slice(0, 500), images };
+    const post: PttPost = { author, title, content: content.slice(0, 500), images, date: dateStr };
     pttCache.set(url, post);
     return post;
   } catch { return null; }
@@ -70,7 +80,8 @@ async function handlePttEmbed(c: Context, board: string, id: string, embedIndex 
   if (!post) return c.redirect(originalUrl, 302);
 
   const host = getOrigin(c);
-  const oembedUrl = `${host}/ptt/oembed?title=${encodeURIComponent(post.title)}&author=${encodeURIComponent(post.author)}&url=${encodeURIComponent(originalUrl)}`;
+  const customSiteName = `PTT${post.date || ""}`;
+  const oembedUrl = `${host}/ptt/oembed?title=${encodeURIComponent(post.title)}&author=${encodeURIComponent(post.author)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   if (isDirect) {
     if (post.images.length > 0) {
@@ -82,7 +93,7 @@ async function handlePttEmbed(c: Context, board: string, id: string, embedIndex 
 
   if (post.images.length > 1 && embedIndex < 0) {
     const imageUrl = `${host}/ptt/grid/${board}/${id}`;
-    return c.html(buildEmbedHtml({ title: `${post.title} - ${post.author}`, description: post.content, url: originalUrl, imageUrl, color: PTT_COLOR, siteName: "PTT", largeImage: true, oembedUrl }));
+    return c.html(buildEmbedHtml({ title: `${post.title} - ${post.author}`, description: post.content, url: originalUrl, imageUrl, color: PTT_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
   }
 
   const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, post.images.length - 1));
@@ -94,7 +105,7 @@ async function handlePttEmbed(c: Context, board: string, id: string, embedIndex 
     url: originalUrl,
     imageUrl: selectedImage,
     color: PTT_COLOR,
-    siteName: "PTT",
+    siteName: customSiteName,
     largeImage: !!selectedImage,
     oembedUrl
   }));
@@ -104,7 +115,7 @@ export const pttRouter = new Hono();
 
 pttRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "link", title: q.title, author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / PTT" }));
+  return c.json(buildOEmbed({ type: "link", title: q.title, author_name: q.author, author_url: q.url, provider_name: q.provider ?? "LinkEmbedder / PTT" }));
 });
 
 pttRouter.get("/grid/:board/:id", async c => {

@@ -7,6 +7,12 @@ import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 const IWARA_COLOR = "#ed7042";
 const X_VERSION = "00d377d9a3d18587749666e69858d607e396fb5a";
 
+function formatNumber(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return n.toString();
+}
+
 interface IwaraVideoInfo {
   title: string;
   body: string;
@@ -46,9 +52,15 @@ async function handleIwaraEmbed(c: Context, videoId: string, videoName: string):
     return c.redirect(`${host}/iwara/dl/${videoId}/Source/video.mp4`, 302);
   }
 
-  const oembedUrl = `${host}/iwara/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.user.name)}&url=${encodeURIComponent(originalUrl)}`;
+  const customSiteName = "Iwara";
+  const oembedUrl = `${host}/iwara/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.user.name)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
-  const description = (info.body || "").slice(0, 500);
+  const metricsArr = [];
+  if (info.numViews > 0) metricsArr.push(`👁️ ${formatNumber(info.numViews)}`);
+  if (info.numLikes > 0) metricsArr.push(`❤️ ${formatNumber(info.numLikes)}`);
+
+  let description = (info.body || "").slice(0, 500);
+  if (metricsArr.length > 0) description = description ? `${description}\n\n${metricsArr.join(" ")}` : metricsArr.join(" ");
 
   return c.html(buildEmbedHtml({
     title: `${info.user.name} - ${info.title}`,
@@ -59,7 +71,7 @@ async function handleIwaraEmbed(c: Context, videoId: string, videoName: string):
     videoHeight: 1080,
     imageUrl: `https://i.iwara.tv/image/thumbnail/${info.file.id}/thumbnail-00.jpg`,
     color: IWARA_COLOR,
-    siteName: "Iwara",
+    siteName: customSiteName,
     twitterCard: "player",
     oembedUrl
   }));
@@ -69,7 +81,7 @@ export const iwaraRouter = new Hono();
 
 iwaraRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "video", title: q.title, author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / Iwara" }));
+  return c.json(buildOEmbed({ type: "video", title: q.title, author_name: q.author, author_url: q.url, provider_name: q.provider ?? "LinkEmbedder / Iwara" }));
 });
 
 iwaraRouter.get("/dl/:videoId/:quality/video.mp4", async c => {

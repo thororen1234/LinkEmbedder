@@ -8,6 +8,12 @@ import { createMosaic } from "../utils/image.js";
 const TIKTOK_COLOR = "#010101";
 const TIKTOK_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
 
+function formatNumber(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return n.toString();
+}
+
 interface TikTokAuthor { nickname?: string; uniqueId?: string; avatarThumb?: string; }
 interface TikTokBitrateInfo { PlayAddr?: { UrlList?: string[]; DataSize?: string; }; CodecType?: string; }
 interface TikTokVideo {
@@ -203,7 +209,7 @@ tiktokRouter.get("/oembed", c => {
     type: (q.type as any) || "link",
     author_name: q.author,
     author_url: q.url,
-    provider_name: "LinkEmbedder / TikTok"
+    provider_name: q.provider ?? "LinkEmbedder / TikTok"
   }));
 });
 
@@ -391,14 +397,27 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
   const username = item.author?.uniqueId ?? "unknown";
   const displayName = item.author?.nickname ?? username;
   const authorName = `${displayName} (@${username})`;
-  const description = item.desc ?? "";
   const postUrl = `https://www.tiktok.com/@${username}/video/${awemeId}`;
   const host = getOrigin(c);
   const isVideo = !item.imagePost?.images?.length;
   const playUrl = findPlayUrl(item.video, hqParam);
 
-  const dateStr = item.createTime ? new Date(Number(item.createTime) * 1000).toLocaleDateString() : undefined;
-  const embedTitle = dateStr ? `Published ${dateStr}` : undefined;
+  const dateStr = item.createTime ? new Date(Number(item.createTime) * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : undefined;
+  const customSiteName = `TikTok${dateStr ? ` • ${dateStr}` : ""}`;
+
+  const likes = item.stats?.diggCount ?? 0;
+  const comments = item.stats?.commentCount ?? 0;
+  const views = item.stats?.playCount ?? 0;
+
+  const metricsArr = [];
+  if (views > 0) metricsArr.push(`👁️ ${formatNumber(views)}`);
+  if (likes > 0) metricsArr.push(`❤️ ${formatNumber(likes)}`);
+  if (comments > 0) metricsArr.push(`💬 ${formatNumber(comments)}`);
+
+  let desc = item.desc ?? "";
+  if (metricsArr.length > 0) {
+    desc = desc ? `${desc}\n\n${metricsArr.join(" ")}` : metricsArr.join(" ");
+  }
 
   if (isDirect) {
     if (isVideo && playUrl) return c.redirect(`${host}/tiktok/play/${awemeId}/video.mp4${hqQuery}`, 302);
@@ -406,17 +425,17 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
     return c.redirect(postUrl, 302);
   }
 
-  const oembedUrl = `${host}/tiktok/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(postUrl)}&type=${isVideo ? "video" : "link"}`;
+  const oembedUrl = `${host}/tiktok/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(postUrl)}&type=${isVideo ? "video" : "link"}&provider=${encodeURIComponent(customSiteName)}`;
 
   if (item.imagePost?.images?.length) {
     const { images } = item.imagePost;
     if (embedIndex >= 0) {
       const idx = Math.min(embedIndex, images.length - 1);
-      return c.html(buildEmbedHtml({ title: embedTitle, description, url: postUrl, proxyUrl: c.req.url, imageUrl: `${host}/tiktok/images/${awemeId}/${idx + 1}`, color: TIKTOK_COLOR, siteName: "TikTok", largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ description: desc, url: postUrl, proxyUrl: c.req.url, imageUrl: `${host}/tiktok/images/${awemeId}/${idx + 1}`, color: TIKTOK_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
     } else if (images.length > 1) {
-      return c.html(buildEmbedHtml({ title: embedTitle, description, url: postUrl, proxyUrl: c.req.url, imageUrl: `${host}/tiktok/grid/${awemeId}`, color: TIKTOK_COLOR, siteName: "TikTok", largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ description: desc, url: postUrl, proxyUrl: c.req.url, imageUrl: `${host}/tiktok/grid/${awemeId}`, color: TIKTOK_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
     } else {
-      return c.html(buildEmbedHtml({ title: embedTitle, description, url: postUrl, proxyUrl: c.req.url, imageUrl: `${host}/tiktok/images/${awemeId}/1`, color: TIKTOK_COLOR, siteName: "TikTok", largeImage: true, oembedUrl }));
+      return c.html(buildEmbedHtml({ description: desc, url: postUrl, proxyUrl: c.req.url, imageUrl: `${host}/tiktok/images/${awemeId}/1`, color: TIKTOK_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
     }
   }
 
@@ -424,8 +443,7 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
   const videoUrl = playUrl ? `${host}/tiktok/play/${awemeId}/video.mp4${hqQuery}` : postUrl;
 
   return c.html(buildEmbedHtml({
-    title: embedTitle,
-    description,
+    description: desc,
     url: postUrl,
     proxyUrl: c.req.url,
     videoUrl,
@@ -433,7 +451,7 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
     videoHeight: item.video?.height ?? 1920,
     imageUrl: hasCover ? `${host}/tiktok/cover/${awemeId}` : undefined,
     color: TIKTOK_COLOR,
-    siteName: "TikTok",
+    siteName: customSiteName,
     twitterCard: "player",
     oembedUrl
   }));

@@ -11,7 +11,19 @@ import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 
 const PIXIV_COLOR = "#0096FA";
 
-interface PixivArtwork { id: string; title: string; userName: string; description: string; urls: { regular: string; original: string; }; tags: { tags: Array<{ tag: string; translation?: { en: string; }; }>; }; pageCount: number; illustType: number; }
+function formatNumber(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return n.toString();
+}
+
+interface PixivArtwork {
+  id: string; title: string; userName: string; description: string;
+  urls: { regular: string; original: string; };
+  tags: { tags: Array<{ tag: string; translation?: { en: string; }; }>; };
+  pageCount: number; illustType: number;
+  likeCount?: number; bookmarkCount?: number; viewCount?: number; createDate?: string;
+}
 interface PixivData { body?: PixivArtwork; error?: boolean; message?: string; }
 interface UgoiraMeta { body?: { src: string; originalSrc: string; mime_type: string; frames: Array<{ file: string; delay: number; }>; }; }
 
@@ -124,9 +136,6 @@ async function handleEmbed(c: Context, manualId?: string, manualIndex?: string):
   if (!data) return c.redirect(originalUrl, 302);
 
   const authorName = `${data.userName}`;
-  const rawDesc = data.description.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "");
-  const tags = data.tags.tags.map(t => `#${t.translation?.en ?? t.tag}`).join(" ");
-  const description = `${rawDesc}\n\n${tags}`;
   const host = getOrigin(c);
 
   const imgIndexParam = c.req.query("img_index") ?? c.req.query("index");
@@ -137,23 +146,42 @@ async function handleEmbed(c: Context, manualId?: string, manualIndex?: string):
     return c.redirect(`${host}/pixiv/i/${id}/${indexStr}`, 302);
   }
 
-  const oembedUrl = `${host}/pixiv/oembed?title=${encodeURIComponent(data.title)}&author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}`;
+  const metricsArr = [];
+  if (data.viewCount && data.viewCount > 0) metricsArr.push(`👁️ ${formatNumber(data.viewCount)}`);
+  if (data.likeCount && data.likeCount > 0) metricsArr.push(`❤️ ${formatNumber(data.likeCount)}`);
+  if (data.bookmarkCount && data.bookmarkCount > 0) metricsArr.push(`⭐ ${formatNumber(data.bookmarkCount)}`);
+
+  const rawDesc = data.description.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "");
+  const tags = data.tags.tags.map(t => `#${t.translation?.en ?? t.tag}`).join(" ");
+  let description = `${rawDesc}\n\n${tags}`;
+  if (metricsArr.length > 0) description += `\n\n${metricsArr.join(" ")}`;
+
+  let dateStr = "";
+  if (data.createDate) {
+    try {
+      const d = new Date(data.createDate);
+      dateStr = ` • ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+    } catch { }
+  }
+  const customSiteName = `Pixiv${dateStr}`;
+
+  const oembedUrl = `${host}/pixiv/oembed?title=${encodeURIComponent(data.title)}&author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   if (data.illustType === 2) {
     const videoRoute = `${host}/pixiv/i/ugoira/${id}.mp4`;
     const imageRoute = `${host}/pixiv/i/${id}/${indexStr}`;
-    return c.html(buildEmbedHtml({ title: data.title, description, url: originalUrl, videoUrl: videoRoute, imageUrl: imageRoute, color: PIXIV_COLOR, siteName: "Pixiv", twitterCard: "player", oembedUrl }));
+    return c.html(buildEmbedHtml({ title: data.title, description, url: originalUrl, videoUrl: videoRoute, imageUrl: imageRoute, color: PIXIV_COLOR, siteName: customSiteName, twitterCard: "player", oembedUrl }));
   }
 
   const imageRoute = `${host}/pixiv/i/${id}/${indexStr}`;
-  return c.html(buildEmbedHtml({ title: data.title, description, url: originalUrl, imageUrl: imageRoute, color: PIXIV_COLOR, siteName: "Pixiv", largeImage: true, oembedUrl }));
+  return c.html(buildEmbedHtml({ title: data.title, description, url: originalUrl, imageUrl: imageRoute, color: PIXIV_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
 }
 
 export const pixivRouter = new Hono();
 
 pixivRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "link", title: q.title, author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / Pixiv" }));
+  return c.json(buildOEmbed({ type: "link", title: q.title, author_name: q.author, author_url: q.url, provider_name: q.provider ?? "LinkEmbedder / Pixiv" }));
 });
 
 pixivRouter.get("/i/:id/:page", async c => {

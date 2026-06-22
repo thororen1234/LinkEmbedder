@@ -6,6 +6,12 @@ import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 
 const TWITCH_COLOR = "#9146FF";
 
+function formatNumber(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return n.toString();
+}
+
 interface TwitchClipInfo {
   title: string;
   streamer: string;
@@ -103,18 +109,23 @@ async function handleClip(c: Context, clipId: string): Promise<Response> {
   }
 
   const host = getOrigin(c);
-  const oembedUrl = `${host}/twitch/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.streamer)}&url=${encodeURIComponent(originalUrl)}`;
+  const customSiteName = "Twitch";
+  const oembedUrl = `${host}/twitch/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.streamer)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
-  const description = `👁️ ${info.views} views`;
+  const metricsArr = [];
+  if (info.views > 0) metricsArr.push(`👁️ ${formatNumber(info.views)}`);
+
+  let description = info.title;
+  if (metricsArr.length > 0) description += `\n\n${metricsArr.join(" ")}`;
 
   return c.html(buildEmbedHtml({
-    description: `${info.title}\n\n${description}`,
+    description,
     url: originalUrl,
     videoUrl: info.video_url,
     videoWidth: 1280,
     videoHeight: 720,
     color: TWITCH_COLOR,
-    siteName: "Twitch",
+    siteName: customSiteName,
     twitterCard: "player",
     oembedUrl
   }));
@@ -124,7 +135,7 @@ export const twitchRouter = new Hono();
 
 twitchRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "video", title: q.title, author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / Twitch" }));
+  return c.json(buildOEmbed({ type: "video", title: q.title, author_name: q.author, author_url: q.url, provider_name: q.provider ?? "LinkEmbedder / Twitch" }));
 });
 
 twitchRouter.get("/clip/:id", c => handleClip(c, c.req.param("id")));

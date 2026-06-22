@@ -7,6 +7,12 @@ import { buildEmbedHtml, buildOEmbed } from "../utils/html.js";
 
 const BILIBILI_COLOR = "#00A1D6";
 
+function formatNumber(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return n.toString();
+}
+
 const DEFAULT_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
   "Referer": "https://www.bilibili.com",
@@ -63,7 +69,7 @@ function signWbiParams(params: Record<string, string | number>, mixinKey: string
 }
 
 interface BilibiliVideoInfo {
-  bvid: string; cid: number; title: string; desc: string; pic: string;
+  bvid: string; cid: number; title: string; desc: string; pic: string; pubdate: number;
   owner: { name: string; }; stat: { view: number; like: number; coin: number; favorite: number; };
   dimension?: { width: number; height: number; };
 }
@@ -110,13 +116,63 @@ async function getPlayUrl(bvid: string, cid: number): Promise<string | null> {
   return null;
 }
 
+async function handleEmbed(c: Context, bvid: string): Promise<Response> {
+  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
+  const isDirect = dParam !== undefined;
+
+  const originalUrl = `https://www.bilibili.com/video/${bvid}`;
+  const ua = c.req.header("user-agent");
+  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
+
+  const info = await fetchVideoInfo(bvid);
+  if (!info) return c.redirect(originalUrl, 302);
+
+  const host = getOrigin(c);
+  const videoUrl = `${host}/bilibili/play/${info.bvid}/${info.cid}/video.mp4`;
+
+  if (isDirect) return c.redirect(videoUrl, 302);
+
+  const metricsArr = [];
+  if (info.stat.view > 0) metricsArr.push(`👁️ ${formatNumber(info.stat.view)}`);
+  if (info.stat.like > 0) metricsArr.push(`❤️ ${formatNumber(info.stat.like)}`);
+  if (info.stat.coin > 0) metricsArr.push(`🪙 ${formatNumber(info.stat.coin)}`);
+  if (info.stat.favorite > 0) metricsArr.push(`⭐ ${formatNumber(info.stat.favorite)}`);
+
+  let description = (info.desc ?? "").slice(0, 500);
+  if (metricsArr.length > 0) description = description ? `${description}\n\n${metricsArr.join(" ")}` : metricsArr.join(" ");
+
+  let dateStr = "";
+  if (info.pubdate) {
+    try {
+      const d = new Date(info.pubdate * 1000);
+      dateStr = ` • ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+    } catch { }
+  }
+  const customSiteName = `Bilibili${dateStr}`;
+
+  const oembedUrl = `${host}/bilibili/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.owner.name)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
+
+  return c.html(buildEmbedHtml({
+    title: `${info.owner.name} - ${info.title}`,
+    description,
+    url: originalUrl,
+    videoUrl,
+    videoWidth: info.dimension?.width ?? 1920,
+    videoHeight: info.dimension?.height ?? 1080,
+    imageUrl: info.pic,
+    color: BILIBILI_COLOR,
+    siteName: customSiteName,
+    twitterCard: "player",
+    oembedUrl
+  }));
+}
+
 export const bilibiliRouter = new Hono();
 
 bilibiliRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "video", title: q.title, author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / Bilibili" }));
+  return c.json(buildOEmbed({ type: "video", title: q.title, author_name: q.author, author_url: q.url, provider_name: q.provider ?? "LinkEmbedder / Bilibili" }));
 });
-
 bilibiliRouter.get("/play/:bvid/:cid/video.mp4", async c => {
   const bvid = c.req.param("bvid");
   const cid = parseInt(c.req.param("cid"), 10);
@@ -136,43 +192,6 @@ bilibiliRouter.get("/play/:bvid/:cid/video.mp4", async c => {
     return c.redirect(url, 302);
   }
 });
-
-async function handleEmbed(c: Context, bvid: string): Promise<Response> {
-  const dParam = c.req.query("d") ?? c.req.query("dir") ?? c.req.query("direct");
-  const isDirect = dParam !== undefined;
-
-  const originalUrl = `https://www.bilibili.com/video/${bvid}`;
-  const ua = c.req.header("user-agent");
-  if (!isBot(ua) && !isDirect) return c.redirect(originalUrl, 302);
-
-  const info = await fetchVideoInfo(bvid);
-  if (!info) return c.redirect(originalUrl, 302);
-
-  const host = getOrigin(c);
-  const oembedUrl = `${host}/bilibili/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.owner.name)}&url=${encodeURIComponent(originalUrl)}`;
-
-  const videoUrl = `${host}/bilibili/play/${info.bvid}/${info.cid}/video.mp4`;
-
-  if (isDirect) {
-    return c.redirect(videoUrl, 302);
-  }
-
-  const description = (info.desc ?? "").slice(0, 500);
-
-  return c.html(buildEmbedHtml({
-    title: `${info.owner.name} - ${info.title}`,
-    description,
-    url: originalUrl,
-    videoUrl,
-    videoWidth: info.dimension?.width ?? 1920,
-    videoHeight: info.dimension?.height ?? 1080,
-    imageUrl: info.pic,
-    color: BILIBILI_COLOR,
-    siteName: "Bilibili",
-    twitterCard: "player",
-    oembedUrl
-  }));
-}
 
 bilibiliRouter.get("/video/:bvid", c => handleEmbed(c, c.req.param("bvid").split("?")[0]));
 bilibiliRouter.get("/:bvid", c => handleEmbed(c, c.req.param("bvid").split("?")[0]));

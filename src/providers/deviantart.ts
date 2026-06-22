@@ -53,7 +53,8 @@ async function handleDAEmbed(c: Context, originalUrl: string): Promise<Response>
     return c.redirect(info.fullsize_url ?? info.url ?? info.thumbnail_url ?? originalUrl, 302);
   }
 
-  const oembedUrl = `${host}/deviantart/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.author_name)}&url=${encodeURIComponent(originalUrl)}`;
+  const customSiteName = "DeviantArt";
+  const oembedUrl = `${host}/deviantart/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.author_name)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   return c.html(buildEmbedHtml({
     title: `${info.title} by ${info.author_name}`,
@@ -61,7 +62,7 @@ async function handleDAEmbed(c: Context, originalUrl: string): Promise<Response>
     url: originalUrl,
     imageUrl: info.fullsize_url ?? info.url ?? info.thumbnail_url,
     color: DA_COLOR,
-    siteName: "DeviantArt",
+    siteName: customSiteName,
     largeImage: true,
     oembedUrl
   }));
@@ -71,7 +72,7 @@ export const deviantartRouter = new Hono();
 
 deviantartRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "photo", title: q.title, author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / DeviantArt" }));
+  return c.json(buildOEmbed({ type: "photo", title: q.title, author_name: q.author, author_url: q.url, provider_name: q.provider ?? "LinkEmbedder / DeviantArt" }));
 });
 
 function extractDAUrl(urlStr: string): string | null {

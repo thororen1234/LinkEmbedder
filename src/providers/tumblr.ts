@@ -7,10 +7,16 @@ import { createMosaic } from "../utils/image.js";
 
 const TUMBLR_COLOR = "#35465C";
 
+function formatNumber(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return n.toString();
+}
+
 interface TumblrMedia { url?: string; type?: string; width?: number; height?: number; }
 interface TumblrFormatting { start: number; end: number; type: string; url?: string; }
 interface TumblrBlock { type: string; text?: string; formatting?: TumblrFormatting[]; media?: TumblrMedia[]; url?: string; poster?: TumblrMedia[]; }
-interface TumblrPost { id_string: string; blog_name: string; summary?: string; content?: TumblrBlock[]; trail?: Array<{ content?: TumblrBlock[]; }>; shortUrl?: string; }
+interface TumblrPost { id_string: string; blog_name: string; summary?: string; content?: TumblrBlock[]; trail?: Array<{ content?: TumblrBlock[]; }>; shortUrl?: string; note_count?: number; date?: string; }
 
 async function fetchPost(blog: string, postId: string): Promise<TumblrPost | null> {
   const cacheKey = `${blog}:${postId}`;
@@ -118,7 +124,6 @@ async function handleEmbed(c: Context, blog: string, postId: string): Promise<Re
   const title = `${post.blog_name} on Tumblr`;
   const blocks = getAllBlocks(post);
   const video = getFirstVideo(blocks);
-  const oembedUrl = `${host}/tumblr/oembed?blog=${encodeURIComponent(post.blog_name)}&url=${encodeURIComponent(postUrl)}&type=${video ? "video" : "link"}`;
 
   if (isDirect) {
     if (video) return c.redirect(video.url, 302);
@@ -130,29 +135,44 @@ async function handleEmbed(c: Context, blog: string, postId: string): Promise<Re
     return c.redirect(originalUrl, 302);
   }
 
-  const textContent = parseTextBlocks(blocks);
-  const description = post.summary && post.summary !== textContent ? `${post.summary}\n\n${textContent}` : textContent;
+  const metricsArr = [];
+  if (post.note_count && post.note_count > 0) metricsArr.push(`🔁 ${formatNumber(post.note_count)}`);
 
-  if (video) return c.html(buildEmbedHtml({ title, description, url: postUrl, proxyUrl: c.req.url, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, imageUrl: video.poster, color: TUMBLR_COLOR, siteName: "Tumblr", twitterCard: "player", oembedUrl }));
+  const textContent = parseTextBlocks(blocks);
+  let description = post.summary && post.summary !== textContent ? `${post.summary}\n\n${textContent}` : textContent;
+  if (metricsArr.length > 0) description += `\n\n${metricsArr.join(" ")}`;
+
+  let dateStr = "";
+  if (post.date) {
+    try {
+      const d = new Date(post.date);
+      if (!isNaN(d.getTime())) dateStr = ` • ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+    } catch { }
+  }
+  const customSiteName = `Tumblr${dateStr}`;
+
+  const oembedUrl = `${host}/tumblr/oembed?blog=${encodeURIComponent(post.blog_name)}&url=${encodeURIComponent(postUrl)}&type=${video ? "video" : "link"}&provider=${encodeURIComponent(customSiteName)}`;
+
+  if (video) return c.html(buildEmbedHtml({ title, description, url: postUrl, proxyUrl: c.req.url, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, imageUrl: video.poster, color: TUMBLR_COLOR, siteName: customSiteName, twitterCard: "player", oembedUrl }));
 
   const images = getImages(blocks);
   if (images.length > 1 && embedIndex < 0) {
     const imageUrl = `${host}/tumblr/grid/${blog}/${postId}`;
-    return c.html(buildEmbedHtml({ title, description, url: postUrl, proxyUrl: c.req.url, imageUrl, color: TUMBLR_COLOR, siteName: "Tumblr", largeImage: true, oembedUrl }));
+    return c.html(buildEmbedHtml({ title, description, url: postUrl, proxyUrl: c.req.url, imageUrl, color: TUMBLR_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
   } else if (images.length > 0) {
     const idx = Math.max(0, Math.min(embedIndex >= 0 ? embedIndex : 0, images.length - 1));
     const image = images[idx];
-    return c.html(buildEmbedHtml({ title, description, url: postUrl, proxyUrl: c.req.url, imageUrl: image.url, imageWidth: image.width, imageHeight: image.height, color: TUMBLR_COLOR, siteName: "Tumblr", largeImage: true, oembedUrl }));
+    return c.html(buildEmbedHtml({ title, description, url: postUrl, proxyUrl: c.req.url, imageUrl: image.url, imageWidth: image.width, imageHeight: image.height, color: TUMBLR_COLOR, siteName: customSiteName, largeImage: true, oembedUrl }));
   }
 
-  return c.html(buildEmbedHtml({ title, description, url: postUrl, proxyUrl: c.req.url, color: TUMBLR_COLOR, siteName: "Tumblr", oembedUrl }));
+  return c.html(buildEmbedHtml({ title, description, url: postUrl, proxyUrl: c.req.url, color: TUMBLR_COLOR, siteName: customSiteName, oembedUrl }));
 }
 
 export const tumblrRouter = new Hono();
 
 tumblrRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: (q.type as any) || "link", author_name: q.blog, author_url: q.url, provider_name: "LinkEmbedder / Tumblr" }));
+  return c.json(buildOEmbed({ type: (q.type as any) || "link", author_name: q.blog, author_url: q.url, provider_name: q.provider ?? "LinkEmbedder / Tumblr" }));
 });
 
 tumblrRouter.get("/grid/:blog/:id", async c => {

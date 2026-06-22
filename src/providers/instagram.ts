@@ -40,8 +40,8 @@ function findItemDeep(obj: any): any {
     if (current.is_video !== undefined && current.display_url) {
       return current;
     }
-    if (current.video_url || current.video_versions) {
-      if (current.__typename === "GraphVideo" || current.is_video) return current;
+    if (current.video_url || current.video_versions || current.browser_native_hd_url) {
+      if (current.__typename === "GraphVideo" || current.is_video || current.media_type === 2) return current;
     }
 
     if (Array.isArray(current)) {
@@ -97,12 +97,12 @@ function parseGqlItem(item: any, postId: string): InstaData | null {
   const caption = item.edge_media_to_caption?.edges?.[0]?.node?.text ?? item.caption?.text ?? "";
 
   const medias: InstaMedia[] = [];
-  const sidecar = item.edge_sidecar_to_children?.edges;
+  const sidecar = item.edge_sidecar_to_children?.edges || item.carousel_media;
 
-  const nodes = sidecar?.length ? sidecar.map((e: any) => e.node) : [item];
+  const nodes = sidecar?.length ? sidecar.map((e: any) => e.node || e) : [item];
 
   for (const node of nodes) {
-    let videoUrl = node.video_url;
+    let videoUrl = node.video_url ?? node.browser_native_hd_url ?? node.browser_native_sd_url;
     if (!videoUrl && node.video_versions?.length) {
       videoUrl = node.video_versions[0].url;
     }
@@ -112,7 +112,7 @@ function parseGqlItem(item: any, postId: string): InstaData | null {
       displayUrl = node.image_versions2.candidates[0].url;
     }
 
-    const isVideoNode = node.is_video || node.__typename?.includes("Video") || videoUrl !== undefined;
+    const isVideoNode = node.is_video || node.__typename?.includes("Video") || node.media_type === 2 || videoUrl !== undefined;
 
     if (isVideoNode && !videoUrl) return null;
 
@@ -128,18 +128,34 @@ function parseGqlItem(item: any, postId: string): InstaData | null {
   if (!medias.length) return null;
 
   let date: string | undefined;
-  if (item.taken_at_timestamp) {
-    date = new Date(item.taken_at_timestamp * 1000).toLocaleDateString();
+  if (item.taken_at_timestamp || item.taken_at) {
+    date = new Date((item.taken_at_timestamp ?? item.taken_at) * 1000).toLocaleDateString();
   }
 
   return { postId, username, caption, medias, date };
+}
+
+async function scrapeFromAPIv1(postId: string): Promise<InstaData | null> {
+  try {
+    const res = await fetch(`https://www.instagram.com/api/v1/feed/shortcode/?shortcode=${postId}`, {
+      headers: {
+        "User-Agent": "Instagram 320.0.0.32.86 (Linux; Android 13; SM-S908B; en_US; 548903264)",
+        "X-IG-App-ID": "936619743392459",
+        "Sec-Fetch-Site": "same-origin"
+      }
+    });
+    if (!res.ok) return null;
+    const json = await res.json() as any;
+    const item = json?.items?.[0];
+    return parseGqlItem(item, postId);
+  } catch { return null; }
 }
 
 async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
   try {
     const res = await fetch(`https://www.instagram.com/p/${postId}/embed/captioned/`, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
         "Sec-Fetch-Dest": "document",
@@ -176,20 +192,31 @@ async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
     let mediaUrl = "";
     let thumbnailUrl: string | undefined = undefined;
 
-    const videoUrlMatch =
-      html.match(/"video_url"\s*:\s*"([^"]+)"/) ||
-      html.match(/\\"video_url\\"\s*:\s*\\"([^"\\]+)\\"/) ||
-      html.match(/"video_versions"[\s\S]*?"url"\s*:\s*"([^"]+)"/);
+    const extractRegexUrl = (regexes: RegExp[]) => {
+      for (const r of regexes) {
+        const match = html.match(r);
+        if (match && match[1]) {
+          let url = match[1];
+          try { url = JSON.parse(`"${url}"`); } catch { }
+          return url.replace(/\\/g, "").replace(/&amp;/g, "&");
+        }
+      }
+      return null;
+    };
+
+    const parsedVideoUrl = extractRegexUrl([
+      /"video_url"\s*:\s*"([^"]+)"/,
+      /\\"video_url\\"\s*:\s*\\"([^"\\]+)\\"/,
+      /&quot;video_url&quot;\s*:\s*&quot;([^&]+)&quot;/,
+      /"browser_native_hd_url"\s*:\s*"([^"]+)"/,
+      /"video_versions"[\s\S]*?"url"\s*:\s*"([^"]+)"/
+    ]);
 
     const videoElementMatch = html.match(/class="EmbeddedMediaVideo"[^>]*src="([^"]+)"/) || html.match(/<video[^>]*src="([^"]+)"/);
 
-    if (videoUrlMatch) {
+    if (parsedVideoUrl) {
       isVideo = true;
-      try {
-        mediaUrl = JSON.parse(`"${videoUrlMatch[1]}"`).replace(/&amp;/g, "&");
-      } catch {
-        mediaUrl = videoUrlMatch[1].replace(/\\/g, "").replace(/&amp;/g, "&");
-      }
+      mediaUrl = parsedVideoUrl;
       const posterMatch = html.match(/"thumbnail_src"\s*:\s*"([^"]+)"/) || html.match(/"display_url"\s*:\s*"([^"]+)"/);
       if (posterMatch) {
         try {
@@ -282,6 +309,7 @@ async function getInstaData(postId: string): Promise<InstaData | null> {
   if (cached) return cached;
 
   let data = await scrapeFromGQL(postId);
+  if (!data?.medias?.length) data = await scrapeFromAPIv1(postId);
   if (!data?.medias?.length) data = await scrapeFromEmbed(postId);
 
   if (data) {

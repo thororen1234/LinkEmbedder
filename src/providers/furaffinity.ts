@@ -73,7 +73,8 @@ async function handleFA(c: Context, id: string): Promise<Response> {
     return c.redirect(info.imageUrl ?? originalUrl, 302);
   }
 
-  const oembedUrl = `${host}/furaffinity/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.artistName)}&url=${encodeURIComponent(originalUrl)}`;
+  const customSiteName = "FurAffinity";
+  const oembedUrl = `${host}/furaffinity/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.artistName)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   return c.html(buildEmbedHtml({
     title: info.title,
@@ -81,7 +82,7 @@ async function handleFA(c: Context, id: string): Promise<Response> {
     url: originalUrl,
     imageUrl: info.imageUrl,
     color: FA_COLOR,
-    siteName: "FurAffinity",
+    siteName: customSiteName,
     largeImage: true,
     oembedUrl
   }));
@@ -91,7 +92,7 @@ export const furaffinityRouter = new Hono();
 
 furaffinityRouter.get("/oembed", c => {
   const q = c.req.query();
-  return c.json(buildOEmbed({ type: "photo", title: q.title, author_name: q.author, author_url: q.url, provider_name: "LinkEmbedder / FurAffinity" }));
+  return c.json(buildOEmbed({ type: "photo", title: q.title, author_name: q.author, author_url: q.url, provider_name: q.provider ?? "LinkEmbedder / FurAffinity" }));
 });
 
 furaffinityRouter.get("/view/:id", c => handleFA(c, c.req.param("id")));
