@@ -48,7 +48,8 @@ async function handleFacebookEmbed(c: Context, url: string): Promise<Response> {
   const description = post.description || "Facebook Video";
   const host = getOrigin(c);
 
-  const customSiteName = "Facebook";
+  const dateStr = ` • ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  const customSiteName = `Facebook${dateStr}`;
   const oembedUrl = `${host}/facebook/oembed?title=${encodeURIComponent("Facebook Reels")}&url=${encodeURIComponent(post.source || url)}&provider=${encodeURIComponent(customSiteName)}`;
 
   return c.html(buildEmbedHtml({

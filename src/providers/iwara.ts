@@ -52,7 +52,8 @@ async function handleIwaraEmbed(c: Context, videoId: string, videoName: string):
     return c.redirect(`${host}/iwara/dl/${videoId}/Source/video.mp4`, 302);
   }
 
-  const customSiteName = "Iwara";
+  const dateStr = ` • ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  const customSiteName = `Iwara${dateStr}`;
   const oembedUrl = `${host}/iwara/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.user.name)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   const metricsArr = [];

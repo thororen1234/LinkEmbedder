@@ -181,9 +181,11 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
   if (rts > 0) metricsArr.push(`🔁 ${formatNumber(rts)}`);
   if (likes > 0) metricsArr.push(`❤️ ${formatNumber(likes)}`);
 
+  const metricsStr = metricsArr.join(" ");
+
   let desc = text;
   if (metricsArr.length > 0) {
-    desc = desc ? `${desc}\n\n${metricsArr.join(" ")}` : metricsArr.join(" ");
+    desc = desc ? `${desc}\n\n${metricsStr}` : metricsStr;
   }
 
   let dateStr = "";
@@ -217,10 +219,10 @@ async function handleTweet(c: Context, tweetId: string, routeUser?: string, embe
     if (photos.length) return c.redirect(photos[Math.max(0, embedIndex >= 0 ? Math.min(embedIndex, photos.length - 1) : 0)].url, 302);
   }
 
-  const oembedUrl = `${host}/twitter/oembed?user=${encodeURIComponent(authorName)}&link=${encodeURIComponent(tweetUrl)}&ttype=${video ? "video" : "link"}&provider=${encodeURIComponent(customSiteName)}`;
+  const oembedUrl = `${host}/twitter/oembed?user=${encodeURIComponent(authorName)}&link=${encodeURIComponent(tweetUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   if (video) {
-    return c.html(buildEmbedHtml({ description: desc, url: tweetUrl, imageUrl: video.thumb, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, color: TWITTER_COLOR, siteName: customSiteName, twitterCard: "player", oembedUrl }));
+    return c.html(buildEmbedHtml({ title: text || undefined, description: metricsStr || undefined, url: tweetUrl, imageUrl: video.thumb, videoUrl: video.url, videoWidth: video.width ?? 1280, videoHeight: video.height ?? 720, color: TWITTER_COLOR, siteName: customSiteName, twitterCard: "player", oembedUrl }));
   }
 
   const photos = getPhotos(tweet);
@@ -247,7 +249,6 @@ export const twitterRouter = new Hono();
 twitterRouter.get("/oembed", c => {
   const q = c.req.query();
   return c.json(buildOEmbed({
-    type: (q.ttype as "link" | "photo" | "video") ?? "link",
     author_name: q.user,
     author_url: q.link,
     provider_name: q.provider ?? "LinkEmbedder / Twitter"

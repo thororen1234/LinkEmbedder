@@ -109,7 +109,8 @@ async function handleClip(c: Context, clipId: string): Promise<Response> {
   }
 
   const host = getOrigin(c);
-  const customSiteName = "Twitch";
+  const dateStr = ` • ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  const customSiteName = `Twitch${dateStr}`;
   const oembedUrl = `${host}/twitch/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.streamer)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   const metricsArr = [];

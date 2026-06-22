@@ -151,6 +151,36 @@ async function scrapeFromAPIv1(postId: string): Promise<InstaData | null> {
   } catch { return null; }
 }
 
+function shortcodeToMediaId(shortcode: string): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  let n = BigInt(0);
+  for (const char of shortcode) {
+    const idx = alphabet.indexOf(char);
+    if (idx === -1) break;
+    n = n * BigInt(64) + BigInt(idx);
+  }
+  return n.toString();
+}
+
+async function scrapeFromWebInfo(postId: string): Promise<InstaData | null> {
+  try {
+    const mediaId = shortcodeToMediaId(postId);
+    if (!mediaId || mediaId === "0") return null;
+    const res = await fetch(`https://www.instagram.com/api/v1/media/${mediaId}/info/`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
+        "Accept": "application/json",
+        "X-IG-App-ID": "936619743392459",
+        "Referer": "https://www.instagram.com/",
+      }
+    });
+    if (!res.ok) return null;
+    const json = await res.json() as any;
+    const item = json?.items?.[0];
+    return parseGqlItem(item, postId);
+  } catch { return null; }
+}
+
 async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
   try {
     const res = await fetch(`https://www.instagram.com/p/${postId}/embed/captioned/`, {
@@ -310,6 +340,7 @@ async function getInstaData(postId: string): Promise<InstaData | null> {
 
   let data = await scrapeFromGQL(postId);
   if (!data?.medias?.length) data = await scrapeFromAPIv1(postId);
+  if (!data?.medias?.length) data = await scrapeFromWebInfo(postId);
   if (!data?.medias?.length) data = await scrapeFromEmbed(postId);
 
   if (data) {
@@ -324,7 +355,6 @@ export const instagramRouter = new Hono();
 instagramRouter.get("/oembed", c => {
   const q = c.req.query();
   return c.json(buildOEmbed({
-    type: (q.type as any) || "link",
     author_name: q.user,
     author_url: q.url,
     provider_name: q.provider ?? "LinkEmbedder / Instagram"
@@ -461,15 +491,16 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
     return c.redirect(`${host}/ig/images/${postId}/${idx + 1}`, 302);
   }
 
+  const authorName = `@${data.username}`;
   const description = data.caption.slice(0, 280) + (data.caption.length > 280 ? "…" : "");
   const dateStr = data.date ? ` • ${data.date}` : "";
   const customSiteName = `Instagram${dateStr}`;
 
-  const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(`@${data.username}`)}&url=${encodeURIComponent(originalUrl)}&type=${isVideo ? "video" : "link"}&provider=${encodeURIComponent(customSiteName)}`;
+  const oembedUrl = `${host}/ig/oembed?user=${encodeURIComponent(authorName)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   if (isVideo) {
     return c.html(buildEmbedHtml({
-      description,
+      title: description || undefined,
       url: originalUrl,
       proxyUrl: c.req.url,
       videoUrl: `${host}/ig/videos/${postId}/${idx + 1}/video.mp4`,

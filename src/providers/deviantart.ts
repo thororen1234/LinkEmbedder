@@ -53,7 +53,8 @@ async function handleDAEmbed(c: Context, originalUrl: string): Promise<Response>
     return c.redirect(info.fullsize_url ?? info.url ?? info.thumbnail_url ?? originalUrl, 302);
   }
 
-  const customSiteName = "DeviantArt";
+  const dateStr = ` • ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  const customSiteName = `DeviantArt${dateStr}`;
   const oembedUrl = `${host}/deviantart/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.author_name)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   return c.html(buildEmbedHtml({

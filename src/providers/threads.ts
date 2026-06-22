@@ -131,7 +131,8 @@ async function handleThreadsEmbed(c: Context, user: string, shortcode: string, e
     return c.redirect(originalUrl, 302);
   }
 
-  const customSiteName = "Threads";
+  const dateStr = ` • ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  const customSiteName = `Threads${dateStr}`;
   const oembedUrl = `${host}/threads/oembed?title=${encodeURIComponent(info.oembedStat)}&author=${encodeURIComponent("@" + info.username)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   const metricsArr = [];

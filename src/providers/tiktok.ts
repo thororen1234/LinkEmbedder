@@ -206,7 +206,6 @@ export const tiktokRouter = new Hono();
 tiktokRouter.get("/oembed", c => {
   const q = c.req.query();
   return c.json(buildOEmbed({
-    type: (q.type as any) || "link",
     author_name: q.author,
     author_url: q.url,
     provider_name: q.provider ?? "LinkEmbedder / TikTok"
@@ -414,9 +413,11 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
   if (likes > 0) metricsArr.push(`❤️ ${formatNumber(likes)}`);
   if (comments > 0) metricsArr.push(`💬 ${formatNumber(comments)}`);
 
+  const metricsStr = metricsArr.join(" ");
+
   let desc = item.desc ?? "";
   if (metricsArr.length > 0) {
-    desc = desc ? `${desc}\n\n${metricsArr.join(" ")}` : metricsArr.join(" ");
+    desc = desc ? `${desc}\n\n${metricsStr}` : metricsStr;
   }
 
   if (isDirect) {
@@ -425,7 +426,7 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
     return c.redirect(postUrl, 302);
   }
 
-  const oembedUrl = `${host}/tiktok/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(postUrl)}&type=${isVideo ? "video" : "link"}&provider=${encodeURIComponent(customSiteName)}`;
+  const oembedUrl = `${host}/tiktok/oembed?author=${encodeURIComponent(authorName)}&url=${encodeURIComponent(postUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   if (item.imagePost?.images?.length) {
     const { images } = item.imagePost;
@@ -443,7 +444,8 @@ async function handleVideoEmbed(c: Context, awemeId: string, embedIndex = -1): P
   const videoUrl = playUrl ? `${host}/tiktok/play/${awemeId}/video.mp4${hqQuery}` : postUrl;
 
   return c.html(buildEmbedHtml({
-    description: desc,
+    title: item.desc || undefined,
+    description: metricsStr || undefined,
     url: postUrl,
     proxyUrl: c.req.url,
     videoUrl,

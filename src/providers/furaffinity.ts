@@ -73,7 +73,8 @@ async function handleFA(c: Context, id: string): Promise<Response> {
     return c.redirect(info.imageUrl ?? originalUrl, 302);
   }
 
-  const customSiteName = "FurAffinity";
+  const dateStr = ` • ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  const customSiteName = `FurAffinity${dateStr}`;
   const oembedUrl = `${host}/furaffinity/oembed?title=${encodeURIComponent(info.title)}&author=${encodeURIComponent(info.artistName)}&url=${encodeURIComponent(originalUrl)}&provider=${encodeURIComponent(customSiteName)}`;
 
   return c.html(buildEmbedHtml({
