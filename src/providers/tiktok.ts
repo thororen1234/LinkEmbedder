@@ -64,55 +64,6 @@ function extractJsonFromScript(html: string, scriptId: string): unknown {
   try { return JSON.parse(html.substring(jsonStart, jsonEnd)); } catch { return null; }
 }
 
-async function fetchVideoDataFxTikTok(awemeId: string): Promise<TikTokItem | null> {
-  try {
-    const url = `https://fxtiktok.thororen.com/@i/video/${awemeId}`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": TIKTOK_DOWNLOAD_UA }
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
-    if (!html.includes("og:video") && !html.includes("og:image")) return null;
-
-    const titleMatch = html.match(/<meta\s+(?:property|name)="(?:og:title|twitter:title)"\s+content="([^"]*)"/);
-    const descMatch = html.match(/<meta\s+(?:property|name)="og:description"\s+content="([^"]*)"/);
-    const vidMatch = html.match(/<meta\s+property="og:video"\s+content="([^"]*)"/);
-    const imgMatch = html.match(/<meta\s+property="og:image"\s+content="([^"]*)"/);
-
-    const title = titleMatch ? titleMatch[1].replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"') : "";
-    const desc = descMatch ? descMatch[1].replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">") : "";
-
-    const authorMatch = title.match(/(.*?)\s+\(@(.*?)\)/);
-    const nickname = authorMatch ? authorMatch[1].trim() : title;
-    const uniqueId = authorMatch ? authorMatch[2].trim() : "";
-
-    const item: TikTokItem = {
-      id: awemeId,
-      desc: desc,
-      author: {
-        nickname: nickname,
-        uniqueId: uniqueId,
-        avatarThumb: imgMatch ? imgMatch[1].replace(/&amp;/g, "&") : undefined
-      }
-    };
-
-    if (vidMatch) {
-      item.video = {
-        cover: imgMatch ? imgMatch[1].replace(/&amp;/g, "&") : undefined,
-        playAddr: vidMatch[1].replace(/&amp;/g, "&"),
-      };
-    } else if (imgMatch) {
-      item.imagePost = {
-        images: [{ imageURL: { urlList: [imgMatch[1].replace(/&amp;/g, "&")] } }]
-      };
-    }
-
-    return item;
-  } catch {
-    return null;
-  }
-}
-
 async function fetchVideoData(awemeId: string): Promise<TikTokItem | null> {
   const cached = tiktokCache.get(awemeId) as TikTokItem | undefined;
   if (cached) return cached;
@@ -131,10 +82,6 @@ async function fetchVideoData(awemeId: string): Promise<TikTokItem | null> {
       }
     }
   } catch { }
-
-  if (!item) {
-    item = await fetchVideoDataFxTikTok(awemeId);
-  }
 
   if (item) {
     tiktokCache.set(awemeId, item);
@@ -243,19 +190,15 @@ tiktokRouter.get("/play/:videoId/video.mp4", async c => {
 
   const range = c.req.header("range");
 
-  const isFxTikTok = playAddrUrl.includes("fxtiktok.thororen.com");
   const upstreamHeaders: Record<string, string> = {
-    "User-Agent": isFxTikTok ? TIKTOK_DOWNLOAD_UA : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/134.0.0.0",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/134.0.0.0",
     Accept: "*/*",
     "Accept-Encoding": "identity",
     "sec-fetch-site": "cross-site",
     "sec-fetch-mode": "cors",
+    Referer: "https://www.tiktok.com/",
+    Origin: "https://www.tiktok.com",
   };
-
-  if (!isFxTikTok) {
-    upstreamHeaders.Referer = "https://www.tiktok.com/";
-    upstreamHeaders.Origin = "https://www.tiktok.com";
-  }
 
   if (range) upstreamHeaders.Range = range;
 

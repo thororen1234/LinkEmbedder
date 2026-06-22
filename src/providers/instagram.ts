@@ -22,14 +22,6 @@ const GQL_HEADERS: Record<string, string> = {
   "sec-fetch-site": "same-origin",
 };
 
-const INSTAGRAM_MIRRORS = [
-  "instafix.thororen.com",
-  "kkinstagram.com",
-  "vxinstagram.com",
-  "eeinstagram.com",
-  "uuinstagram.com",
-];
-
 function extractGqlData(html: string): any {
   const marker = '\\"gql_data\\":\\"';
   const startIdx = html.indexOf(marker);
@@ -71,7 +63,11 @@ function parseGqlItem(item: any, postId: string): InstaData | null {
   for (const node of nodes) {
     const videoUrl = node.video_url;
     const displayUrl = node.display_url;
-    const typeName = node.__typename ?? (videoUrl ? "GraphVideo" : "GraphImage");
+    const isVideoNode = node.is_video || node.__typename?.includes("Video");
+
+    if (isVideoNode && !videoUrl) return null;
+
+    const typeName = node.__typename ?? (videoUrl || isVideoNode ? "GraphVideo" : "GraphImage");
 
     medias.push({
       typeName,
@@ -91,6 +87,8 @@ async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
     });
     if (!res.ok) return null;
     const html = await res.text();
+
+    if (html.includes("WatchOnInstagram")) return null;
 
     const gqlData = extractGqlData(html);
     if (gqlData) {
@@ -171,71 +169,12 @@ async function scrapeFromGQL(postId: string): Promise<InstaData | null> {
   } catch { return null; }
 }
 
-async function scrapeFromMirror(postId: string): Promise<InstaData | null> {
-  const ua = "TelegramBot (like TwitterBot)";
-
-  for (const mirror of INSTAGRAM_MIRRORS) {
-    try {
-      const medias: InstaMedia[] = [];
-      let username = "";
-      let caption = "";
-      let lastMediaUrl = "";
-
-      for (let n = 1; n <= 10; n++) {
-        const res = await fetch(`https://${mirror}/p/${postId}/${n}`, { headers: { "User-Agent": ua } });
-        if (!res.ok) break;
-        const html = await res.text();
-        if (!html.trim()) break;
-
-        if (n === 1) {
-          const titleMatch = html.match(/<meta\s+(?:property|name)="(?:og:title|twitter:title)"\s+content="([^"]*)"/);
-          if (titleMatch) {
-            const t = titleMatch[1].replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"');
-            const candidate = t.replace(/^@/, "").split(" (")[0];
-            if (!INSTAGRAM_MIRRORS.some(m => m.split(".")[0] === candidate.toLowerCase())) {
-              username = candidate;
-            }
-          }
-          const descMatch = html.match(/<meta\s+(?:property|name)="og:description"\s+content="([^"]*)"/);
-          if (descMatch) caption = descMatch[1].replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-        }
-
-        const vidMatch = html.match(/<meta\s+property="og:video"\s+content="([^"]*)"/);
-        const imgMatch = html.match(/<meta\s+property="og:image"\s+content="([^"]*)"/);
-
-        let slideUrl = vidMatch?.[1] || imgMatch?.[1];
-        if (!slideUrl) break;
-
-        slideUrl = slideUrl.replace(/&amp;/g, "&");
-        if (slideUrl.startsWith("/")) slideUrl = `https://${mirror}${slideUrl}`;
-
-        if (lastMediaUrl === slideUrl) break;
-        lastMediaUrl = slideUrl;
-
-        medias.push({
-          typeName: vidMatch ? "GraphVideo" : "GraphImage",
-          url: slideUrl,
-          thumbnailUrl: vidMatch ? imgMatch?.[1]?.replace(/&amp;/g, "&") : undefined
-        });
-
-        if (vidMatch) break;
-      }
-
-      if (medias.length > 0) {
-        return { postId, username: username || "instagram", caption, medias };
-      }
-    } catch { continue; }
-  }
-  return null;
-}
-
 async function getInstaData(postId: string): Promise<InstaData | null> {
   const cached = instagramCache.get(postId) as InstaData | undefined;
   if (cached) return cached;
 
   let data = await scrapeFromGQL(postId);
   if (!data?.medias?.length) data = await scrapeFromEmbed(postId);
-  if (!data?.medias?.length) data = await scrapeFromMirror(postId);
 
   if (data) {
     instagramCache.set(postId, data);
