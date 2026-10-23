@@ -10,18 +10,6 @@ const INSTA_COLOR = "#E1306C";
 interface InstaMedia { typeName: string; url: string; thumbnailUrl?: string; }
 interface InstaData { postId: string; username: string; caption: string; medias: InstaMedia[]; }
 
-const GQL_HEADERS: Record<string, string> = {
-  Accept: "*/*",
-  "Accept-Language": "en-US,en;q=0.9",
-  "Content-Type": "application/x-www-form-urlencoded",
-  Origin: "https://www.instagram.com",
-  Referer: "https://www.instagram.com/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-  "X-Ig-App-Id": "936619743392459",
-  "X-Fb-Friendly-Name": "PolarisPostActionLoadPostQueryQuery",
-  "sec-fetch-site": "same-origin",
-};
-
 const INSTAGRAM_MIRRORS = [
   "instafix.thororen.com",
   "kkinstagram.com",
@@ -30,31 +18,17 @@ const INSTAGRAM_MIRRORS = [
   "uuinstagram.com",
 ];
 
-function extractGqlData(html: string): any {
-  const marker = '\\"gql_data\\":\\"';
-  const startIdx = html.indexOf(marker);
-  if (startIdx === -1) return null;
-
-  const start = startIdx + marker.length;
-  let end = start;
-  while (end < html.length) {
-    if (html[end] === "\\" && html[end + 1] === '"') {
-      end += 2;
-      continue;
-    }
-    if (html[end] === '"' && html[end - 1] !== "\\") {
-      break;
-    }
-    end++;
-  }
-
+function extractFromContextJSON(html: string): any {
+  const initMatch = html.match(/"init",\[\],\[(.*?)\]\],/);
+  if (!initMatch) return null;
   try {
-    const escaped = html.substring(start, end);
-    const unescaped = JSON.parse('"' + escaped + '"');
-    return JSON.parse(unescaped);
-  } catch {
-    return null;
-  }
+    const item = JSON.parse(initMatch[1]);
+    if (!item?.contextJSON) return null;
+    const ctx = JSON.parse(item.contextJSON);
+    const gqlData = ctx?.gql_data;
+    if (!gqlData) return null;
+    return gqlData.shortcode_media ?? gqlData.xdt_shortcode_media ?? null;
+  } catch { return null; }
 }
 
 function parseGqlItem(item: any, postId: string): InstaData | null {
@@ -92,13 +66,10 @@ async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
     if (!res.ok) return null;
     const html = await res.text();
 
-    const gqlData = extractGqlData(html);
-    if (gqlData) {
-      const item = gqlData.shortcode_media ?? gqlData.xdt_shortcode_media;
-      if (item) {
-        const parsed = parseGqlItem(item, postId);
-        if (parsed) return parsed;
-      }
+    const gqlItem = extractFromContextJSON(html);
+    if (gqlItem) {
+      const parsed = parseGqlItem(gqlItem, postId);
+      if (parsed) return parsed;
     }
 
     const usernameMatch = html.match(/class="UsernameText"[^>]*>([^<]+)/);
@@ -129,45 +100,6 @@ async function scrapeFromEmbed(postId: string): Promise<InstaData | null> {
         thumbnailUrl: thumbnailMatch?.[1]?.replace(/&amp;/g, "&")
       }]
     };
-  } catch { return null; }
-}
-
-async function scrapeFromGQL(postId: string): Promise<InstaData | null> {
-  try {
-    const variables = JSON.stringify({
-      shortcode: postId,
-      fetch_comment_count: 2,
-      has_threaded_comments: true,
-    });
-
-    const body = new URLSearchParams({
-      av: "0",
-      __d: "www",
-      __user: "0",
-      __a: "1",
-      __req: "k",
-      __hs: "19888.HYP:instagram_web_pkg.2.1..0.0",
-      dpr: "2",
-      __ccg: "UNKNOWN",
-      __rev: "1014227545",
-      fb_api_caller_class: "RelayModern",
-      fb_api_req_friendly_name: "PolarisPostActionLoadPostQueryQuery",
-      server_timestamps: "true",
-      doc_id: "25531498899829322",
-      variables,
-    }).toString();
-
-    const res = await fetch("https://www.instagram.com/graphql/query/", {
-      method: "POST",
-      headers: GQL_HEADERS,
-      body,
-    });
-
-    if (!res.ok) return null;
-
-    const json = await res.json() as any;
-    const item = json?.data?.shortcode_media ?? json?.data?.xdt_shortcode_media;
-    return parseGqlItem(item, postId);
   } catch { return null; }
 }
 
@@ -238,8 +170,7 @@ async function getInstaData(postId: string, expectVideo = false): Promise<InstaD
   const cached = instagramCache.get(postId) as InstaData | undefined;
   if (cached && hasUsableMedia(cached, expectVideo)) return cached;
 
-  let data = await scrapeFromGQL(postId);
-  if (!hasUsableMedia(data, expectVideo)) data = await scrapeFromEmbed(postId);
+  let data = await scrapeFromEmbed(postId);
   if (!hasUsableMedia(data, expectVideo)) data = await scrapeFromMirror(postId);
 
   if (data?.medias?.length) {
@@ -373,10 +304,13 @@ async function handleEmbed(c: Context, manualId?: string, manualMediaNum?: strin
   if (!data?.medias?.length) return c.redirect(originalUrl, 302);
 
   const host = getOrigin(c);
-  const imgIndexParam = manualMediaNum || c.req.param("mediaNum") || c.req.query("img_index") || c.req.query("index");
-  const isGrid = data.medias.length > 1 && !imgIndexParam;
-  const idx = Math.max(0, (parseInt(imgIndexParam || "1") - 1));
+  const imgIndexParam = c.req.param("mediaNum") || c.req.query("index");
+  // instagram has a zero-indexed param for index
+  const idx = manualMediaNum
+    ? Math.max(0, parseInt(manualMediaNum))
+    : Math.max(0, (parseInt(imgIndexParam || "1") - 1));
   const media = data.medias[Math.min(idx, data.medias.length - 1)];
+  const isGrid = data.medias.length > 1 && !(imgIndexParam || manualMediaNum);
   const isVideo = media.typeName.includes("Video") || ["reel", "reels", "tv"].includes(type);
 
   if (isDirect) {
